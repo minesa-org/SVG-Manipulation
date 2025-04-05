@@ -8,13 +8,16 @@ let animationInterval = null;
 let svgFiles = [];
 let currentFileIndex = 0;
 
+// Character type (male/female)
+let characterType = "male";
+
 // Initialize the application
 document.addEventListener("DOMContentLoaded", () => {
     // Fetch and populate the file selectors
     fetchSvgFiles();
     fetchReplacementFiles();
 
-    // Add event listeners
+    // Add event listeners for file and sprite operations
     document
         .getElementById("svgFileSelector")
         .addEventListener("change", loadSelectedSvg);
@@ -24,9 +27,23 @@ document.addEventListener("DOMContentLoaded", () => {
     document
         .getElementById("analyzeSprites")
         .addEventListener("click", analyzeSprites);
+    // Apply to All Files button removed - now automatic
+
+    // Add event listeners for character type selection
     document
-        .getElementById("applyToAll")
-        .addEventListener("click", applyToAllFiles);
+        .getElementById("selectMale")
+        .addEventListener("click", () => setCharacterType("male"));
+    document
+        .getElementById("selectFemale")
+        .addEventListener("click", () => setCharacterType("female"));
+
+    // Add event listeners for special actions
+    document.getElementById("removeHat").addEventListener("click", removeHat);
+    document
+        .getElementById("toggleAccessories")
+        .addEventListener("click", toggleAccessories);
+
+    // Add event listeners for animation controls
     document
         .getElementById("startAnimation")
         .addEventListener("click", startAnimation);
@@ -41,7 +58,8 @@ document.addEventListener("DOMContentLoaded", () => {
 // Fetch SVG files from the server
 async function fetchSvgFiles() {
     try {
-        const response = await fetch("/api/svg-files");
+        // Include character type in the request
+        const response = await fetch(`/api/svg-files?type=${characterType}`);
         if (!response.ok) {
             throw new Error(`Failed to fetch files: ${response.statusText}`);
         }
@@ -121,11 +139,11 @@ function populateReplacementFileSelector(files) {
     // Group files by category
     const categories = {
         "male/mouth": [],
-        "male/face": [],
+        "male/head": [],
         "male/hair": [],
         "male/eyes": [],
         "female/mouth": [],
-        "female/face": [],
+        "female/head": [],
         "female/hair": [],
         "female/eyes": [],
         "male/other": [],
@@ -234,13 +252,8 @@ function displaySvg(svgContent) {
 
 // Placeholder for removed replaceFace function
 
-// Replace any sprite in the SVG while preserving the transform
+// Replace any sprite in all SVG files while preserving the transform
 async function replaceSprite() {
-    if (!modifiedSvgContent) {
-        updateStatus("Please load an SVG file first", "warning");
-        return;
-    }
-
     const replacementFile = document.getElementById(
         "spriteReplacementFile"
     ).value;
@@ -249,28 +262,22 @@ async function replaceSprite() {
         return;
     }
 
-    const fileName = document.getElementById("svgFileSelector").value;
-    if (!fileName) {
-        updateStatus("No SVG file selected", "warning");
-        return;
-    }
-
     // Get the optional sprite ID
     const spriteId = document.getElementById("spriteId").value.trim();
 
-    updateStatus("Replacing sprite while preserving transform...");
+    updateStatus("Replacing sprite in all files while preserving transform...");
 
     try {
-        // Call the server-side API to replace the sprite
-        const response = await fetch("/api/replace-sprite", {
+        // Call the server-side API to replace the sprite in all files
+        const response = await fetch("/api/apply-to-all", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
             },
             body: JSON.stringify({
-                fileName,
                 replacementFile,
                 spriteId: spriteId || undefined, // Only send if not empty
+                characterType: characterType,
             }),
         });
 
@@ -280,10 +287,13 @@ async function replaceSprite() {
             throw new Error(result.error || "Failed to replace sprite");
         }
 
-        // Reload the SVG to show the changes
-        await loadSelectedSvg();
+        // Reload the SVG to show the changes if one is loaded
+        if (currentSvgFile) {
+            await loadSelectedSvg();
+        }
+
         updateStatus(
-            result.message || "Sprite replaced successfully",
+            result.message || "Sprite replaced successfully in all files",
             "success"
         );
     } catch (error) {
@@ -364,176 +374,194 @@ function updateStatus(message, type = "") {
 // Analyze the current SVG and list all sprite IDs
 function analyzeSprites() {
     console.log("analyzeSprites function called");
+
     if (!modifiedSvgContent) {
         updateStatus("Please load an SVG file first", "warning");
         return;
     }
-    console.log("SVG content available, proceeding with analysis");
 
+    // Get the sprites list element
     const spritesList = document.getElementById("spritesList");
+
+    // Clear any existing content
     spritesList.innerHTML = "";
 
     try {
-        // Parse the SVG
+        // Parse the SVG content
         const parser = new DOMParser();
         const svgDoc = parser.parseFromString(
             modifiedSvgContent,
             "image/svg+xml"
         );
 
-        // Find all sprite elements and elements with character names
-        const spriteElements = [];
-        const allElements = svgDoc.querySelectorAll("*");
+        // Find all elements with IDs
+        const elements = svgDoc.querySelectorAll("*[id]");
+        const sprites = [];
 
-        // First pass: collect all elements with character names
-        const characterNameMap = new Map();
-        for (const element of allElements) {
+        // First collect all character names from all elements
+        const characterMap = new Map();
+        const allElements = svgDoc.querySelectorAll("*");
+        allElements.forEach((element) => {
             const characterName = element.getAttribute("ffdec:characterName");
             if (characterName) {
-                // If this element has an ID, store it directly
+                // Check if this element references a sprite
+                const href = element.getAttribute("xlink:href");
+                if (href && href.startsWith("#sprite")) {
+                    const spriteId = href.substring(1); // Remove the # from the beginning
+                    characterMap.set(spriteId, characterName);
+                }
+
+                // Also store by ID if it has one
                 const id = element.getAttribute("id");
                 if (id) {
-                    characterNameMap.set(id, characterName);
-                }
-
-                // If it has an xlink:href, store the reference
-                const href = element.getAttribute("xlink:href");
-                if (href && href.startsWith("#")) {
-                    const refId = href.substring(1);
-                    characterNameMap.set(refId, characterName);
+                    characterMap.set(id, characterName);
                 }
             }
-        }
+        });
 
-        // Second pass: collect all sprite elements with their info
-        for (const element of allElements) {
+        // Now collect sprite elements with their character names
+        elements.forEach((element) => {
             const id = element.getAttribute("id");
-            if (!id) continue;
-
-            // Include all sprites and elements with character names
-            if (id.startsWith("sprite") || characterNameMap.has(id)) {
-                // Get additional info about the element
-                let name = "";
-                let info = "";
-
-                // Check if it has a character name directly or via reference
-                const directCharacterName = element.getAttribute(
+            if (id && id.startsWith("sprite")) {
+                // Get character name if available directly or via our map
+                const directCharName = element.getAttribute(
                     "ffdec:characterName"
                 );
-                const mappedCharacterName = characterNameMap.get(id);
-                const characterName =
-                    directCharacterName || mappedCharacterName;
+                const mappedCharName = characterMap.get(id);
+                const characterName = directCharName || mappedCharName || "";
 
-                if (characterName) {
-                    name = characterName;
-                    info = ` (${characterName})`;
-                }
-
-                // Check if it has paths or references a shape
-                const paths = element.querySelectorAll("path").length;
+                // Also check if this sprite contains any use elements with character names
+                let useCharName = "";
                 const useElements = element.querySelectorAll("use");
-
-                if (!name && paths > 0) {
-                    info = ` (${paths} paths)`;
-                } else if (!name && useElements.length > 0) {
-                    // Check if any use elements have character names
-                    let useWithName = false;
-                    for (const useElement of useElements) {
-                        const useCharName = useElement.getAttribute(
-                            "ffdec:characterName"
-                        );
-                        if (useCharName) {
-                            name = useCharName;
-                            info = ` (${useCharName})`;
-                            useWithName = true;
-                            break;
-                        }
-
-                        // Check if it references an element with a character name
-                        const useHref = useElement.getAttribute("xlink:href");
-                        if (useHref && useHref.startsWith("#")) {
-                            const useRefId = useHref.substring(1);
-                            const refCharName = characterNameMap.get(useRefId);
-                            if (refCharName) {
-                                name = refCharName;
-                                info = ` (${refCharName} via ${useHref})`;
-                                useWithName = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    // If no character names found, just show the reference
-                    if (!useWithName && useElements.length > 0) {
-                        const useElement = useElements[0];
-                        const href = useElement.getAttribute("xlink:href");
-                        if (href) {
-                            info = ` (references ${href})`;
-                        }
+                for (const useEl of useElements) {
+                    const useName = useEl.getAttribute("ffdec:characterName");
+                    if (useName) {
+                        useCharName = useName;
+                        break;
                     }
                 }
 
-                spriteElements.push({ id, name, info });
+                sprites.push({
+                    id: id,
+                    name: characterName || useCharName || "",
+                    element: element,
+                });
             }
+        });
+
+        // Helper function to get sprite type
+        function getSpriteType(name) {
+            if (!name) return "unknown";
+            name = name.toLowerCase();
+            if (name.includes("mouth")) return "mouth";
+            if (name.includes("eye")) return "eye";
+            if (name.includes("hair")) return "hair";
+            if (name.includes("face") || name.includes("head")) return "head";
+            if (name.includes("body")) return "body";
+            if (name.includes("arm")) return "arm";
+            if (name.includes("leg")) return "leg";
+            return "other";
         }
 
-        if (spriteElements.length === 0) {
-            spritesList.innerHTML =
-                "<div class='sprite-item'>No sprite elements found</div>";
+        // Sort sprites by type and then numerically
+        sprites.sort((a, b) => {
+            // First sort by type
+            const typeA = getSpriteType(a.name);
+            const typeB = getSpriteType(b.name);
+
+            if (typeA !== typeB) {
+                // Define type order
+                const typeOrder = {
+                    face: 1,
+                    eye: 2,
+                    mouth: 3,
+                    hair: 4,
+                    body: 5,
+                    arm: 6,
+                    leg: 7,
+                    other: 8,
+                    unknown: 9,
+                };
+                return typeOrder[typeA] - typeOrder[typeB];
+            }
+
+            // Then sort numerically
+            const numA = parseInt(a.id.replace("sprite", ""));
+            const numB = parseInt(b.id.replace("sprite", ""));
+            return numA - numB;
+        });
+
+        // Display sprites in the list
+        if (sprites.length === 0) {
+            const noSpritesMsg = document.createElement("div");
+            noSpritesMsg.className = "sprite-item";
+            noSpritesMsg.textContent = "No sprites found in this SVG";
+            spritesList.appendChild(noSpritesMsg);
         } else {
-            // First sort by character name (if available), then numerically
-            spriteElements.sort((a, b) => {
-                // If both have names, sort by name first
-                if (a.name && b.name) {
-                    return a.name.localeCompare(b.name);
+            // Group sprites by type
+            let currentType = "";
+
+            // Add each sprite to the list
+            sprites.forEach((sprite) => {
+                // Add section header if type changes
+                const spriteType = getSpriteType(sprite.name);
+                if (spriteType !== currentType) {
+                    currentType = spriteType;
+
+                    // Add a section header
+                    const header = document.createElement("div");
+                    header.className = "sprite-section-header";
+                    header.textContent =
+                        spriteType.charAt(0).toUpperCase() +
+                        spriteType.slice(1);
+                    spritesList.appendChild(header);
                 }
-                // If only one has a name, prioritize it
-                if (a.name) return -1;
-                if (b.name) return 1;
 
-                // Otherwise sort numerically by sprite ID
-                const numA = parseInt(a.id.replace("sprite", ""));
-                const numB = parseInt(b.id.replace("sprite", ""));
-                return numA - numB;
-            });
+                const item = document.createElement("div");
+                item.className = "sprite-item";
 
-            // Add to the list
-            spriteElements.forEach((item) => {
-                const div = document.createElement("div");
-                div.className = "sprite-item";
+                // Always show the sprite ID first
+                const idSpan = document.createElement("span");
+                idSpan.className = "sprite-id";
+                idSpan.textContent = sprite.id;
+                item.appendChild(idSpan);
 
-                // Create a more structured display
-                if (item.name) {
-                    // If it has a character name, make it prominent
-                    const nameElement = document.createElement("strong");
-                    nameElement.textContent = item.name;
-                    nameElement.setAttribute("data-name", item.name);
+                // Add a separator
+                item.appendChild(document.createTextNode(" - "));
 
-                    const idElement = document.createElement("span");
-                    idElement.className = "sprite-id";
-                    idElement.textContent = `(${item.id})`;
+                if (sprite.name) {
+                    // If it has a name, display it prominently
+                    const nameSpan = document.createElement("strong");
+                    nameSpan.textContent = sprite.name;
+                    item.appendChild(nameSpan);
 
-                    div.appendChild(nameElement);
-                    div.appendChild(document.createTextNode(" "));
-                    div.appendChild(idElement);
-
-                    // Add a special class for mouth-related sprites
-                    if (
-                        item.name.includes("Mouth") ||
-                        item.name.includes("mouth")
+                    // Add special classes based on sprite type
+                    if (sprite.name.toLowerCase().includes("mouth")) {
+                        item.classList.add("mouth-sprite");
+                    } else if (sprite.name.toLowerCase().includes("eye")) {
+                        item.classList.add("eye-sprite");
+                    } else if (sprite.name.toLowerCase().includes("hair")) {
+                        item.classList.add("hair-sprite");
+                    } else if (
+                        sprite.name.toLowerCase().includes("face") ||
+                        sprite.name.toLowerCase().includes("head")
                     ) {
-                        div.classList.add("mouth-sprite");
+                        item.classList.add("head-sprite");
                     }
                 } else {
-                    // Otherwise just show the ID and info
-                    div.textContent = `${item.id}${item.info}`;
+                    // If no name, show "Unknown"
+                    const unknownSpan = document.createElement("em");
+                    unknownSpan.textContent = "Unknown";
+                    item.appendChild(unknownSpan);
                 }
 
-                div.addEventListener("click", () => {
-                    document.getElementById("spriteId").value = item.id;
+                // Add click handler to select this sprite
+                item.addEventListener("click", () => {
+                    document.getElementById("spriteId").value = sprite.id;
                     spritesList.classList.remove("active");
                 });
-                spritesList.appendChild(div);
+
+                spritesList.appendChild(item);
             });
         }
 
@@ -544,17 +572,16 @@ function analyzeSprites() {
         closeButton.addEventListener("click", () => {
             spritesList.classList.remove("active");
         });
+
         spritesList.appendChild(document.createElement("hr"));
         spritesList.appendChild(closeButton);
 
         // Show the list
-        console.log("Adding 'active' class to spritesList");
         spritesList.classList.add("active");
-        // Force display with inline style
         spritesList.style.display = "block";
+
         console.log(
-            "spritesList classes after adding 'active':",
-            spritesList.className
+            `Found ${sprites.length} sprites, list should now be visible`
         );
     } catch (error) {
         console.error("Error analyzing sprites:", error);
@@ -563,6 +590,103 @@ function analyzeSprites() {
 }
 
 // Placeholder for removed saveSvg function
+
+// Set the character type (male/female)
+function setCharacterType(type) {
+    if (type !== characterType) {
+        characterType = type;
+
+        // Update UI
+        document
+            .getElementById("selectMale")
+            .classList.toggle("active", type === "male");
+        document
+            .getElementById("selectFemale")
+            .classList.toggle("active", type === "female");
+
+        // Fetch files for the selected character type
+        fetchSvgFiles();
+
+        // Update status
+        updateStatus(`Switched to ${type} character`, "success");
+    }
+}
+
+// Remove hat from all SVG files
+async function removeHat() {
+    updateStatus("Removing hats from all files...");
+
+    try {
+        // Call the server-side API to remove hats from all files
+        const response = await fetch("/api/remove-hat-all", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                characterType: characterType,
+            }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || "Failed to remove hats");
+        }
+
+        // Reload the SVG to show the changes if one is loaded
+        if (currentSvgFile) {
+            await loadSelectedSvg();
+        }
+
+        updateStatus(
+            result.message || "Hats removed successfully from all files",
+            "success"
+        );
+    } catch (error) {
+        console.error("Error removing hats:", error);
+        updateStatus(`Error removing hats: ${error.message}`, "error");
+    }
+}
+
+// Toggle accessories in the current SVG
+async function toggleAccessories() {
+    if (!modifiedSvgContent) {
+        updateStatus("Please load an SVG file first", "warning");
+        return;
+    }
+
+    updateStatus("Toggling accessories...");
+
+    try {
+        // Call the server-side API to toggle accessories
+        const response = await fetch("/api/toggle-accessories", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                fileName: currentSvgFile,
+            }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || "Failed to toggle accessories");
+        }
+
+        // Reload the SVG to show the changes
+        await loadSelectedSvg();
+        updateStatus(
+            result.message || "Accessories toggled successfully",
+            "success"
+        );
+    } catch (error) {
+        console.error("Error toggling accessories:", error);
+        updateStatus(`Error toggling accessories: ${error.message}`, "error");
+    }
+}
 
 // Apply the selected sprite to all SVG files
 async function applyToAllFiles() {

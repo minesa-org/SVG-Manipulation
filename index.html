@@ -22,6 +22,21 @@
             <div class="controls">
                 <div class="file-selector">
                     <h2>Select SVG File</h2>
+                    <div class="character-selector">
+                        <label>Character Type:</label>
+                        <div class="character-type-buttons">
+                            <button
+                                id="selectMale"
+                                class="character-button active">
+                                Male
+                            </button>
+                            <button
+                                id="selectFemale"
+                                class="character-button">
+                                Female
+                            </button>
+                        </div>
+                    </div>
                     <select id="svgFileSelector">
                         <option value="">Select a file...</option>
                         <!-- Files will be populated by JavaScript -->
@@ -65,12 +80,23 @@
                                 <button
                                     id="replaceSprite"
                                     class="action-button primary">
-                                    Replace Sprite
+                                    Replace Sprite in All Files
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="special-actions">
+                            <h3>Special Actions</h3>
+                            <div class="button-row">
+                                <button
+                                    id="removeHat"
+                                    class="action-button warning">
+                                    Remove Hat
                                 </button>
                                 <button
-                                    id="applyToAll"
+                                    id="toggleAccessories"
                                     class="action-button warning">
-                                    Apply to All Files
+                                    Toggle Accessories
                                 </button>
                             </div>
                         </div>
