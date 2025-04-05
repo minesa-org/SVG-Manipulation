@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1.0" />
+        <title>SVG Modifier</title>
+        <link
+            rel="stylesheet"
+            href="styles.css" />
+    </head>
+    <body>
+        <div class="container">
+            <h1>SVG Modifier</h1>
+            <div class="preview-container">
+                <h2>Preview</h2>
+                <div
+                    id="svgPreview"
+                    class="svg-preview"></div>
+            </div>
+            <div class="controls">
+                <div class="file-selector">
+                    <h2>Select SVG File</h2>
+                    <select id="svgFileSelector">
+                        <option value="">Select a file...</option>
+                        <!-- Files will be populated by JavaScript -->
+                    </select>
+                </div>
+
+                <div class="modification-controls">
+                    <h2>Modify Elements</h2>
+                    <div class="button-group">
+                        <div class="sprite-replacement-form">
+                            <h3>Sprite Replacement</h3>
+                            <div class="form-group">
+                                <label for="spriteReplacementFile"
+                                    >Replacement Sprite File:</label
+                                >
+                                <select id="spriteReplacementFile">
+                                    <option value="">
+                                        Select a replacement file...
+                                    </option>
+                                    <!-- Files will be populated by JavaScript -->
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="spriteId">Sprite ID:</label>
+                                <div class="sprite-id-container">
+                                    <input
+                                        type="text"
+                                        id="spriteId"
+                                        placeholder="Select from list or enter manually" />
+                                    <button
+                                        id="analyzeSprites"
+                                        class="small-button">
+                                        Show All Sprites
+                                    </button>
+                                </div>
+                            </div>
+                            <div
+                                id="spritesList"
+                                class="sprites-list"></div>
+                            <div class="button-row">
+                                <button
+                                    id="replaceSprite"
+                                    class="action-button primary">
+                                    Replace Sprite
+                                </button>
+                                <button
+                                    id="applyToAll"
+                                    class="action-button warning">
+                                    Apply to All Files
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="animation-controls">
+                            <h3>Animation Controls</h3>
+                            <div class="form-group">
+                                <label for="animationSpeed"
+                                    >Animation Speed (ms):</label
+                                >
+                                <input
+                                    type="number"
+                                    id="animationSpeed"
+                                    value="30"
+                                    min="10"
+                                    max="1000" />
+                            </div>
+                            <div class="button-row">
+                                <button
+                                    id="startAnimation"
+                                    class="action-button success">
+                                    Start Animation
+                                </button>
+                                <button
+                                    id="stopAnimation"
+                                    class="action-button danger">
+                                    Stop Animation
+                                </button>
+                            </div>
+                        </div>
+                        <button
+                            id="restoreAllSvg"
+                            class="action-button danger">
+                            Restore All SVG Files
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="status-bar">
+                <span id="statusMessage">Ready</span>
+            </div>
+        </div>
+
+        <script src="script.js"></script>
+    </body>
+</html>
