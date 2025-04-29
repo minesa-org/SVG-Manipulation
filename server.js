@@ -13,14 +13,19 @@ app.get("/", (req, res) => {
     res.sendFile(path.join(__dirname, "index.html"));
 });
 
-// API endpoint to get all SVG files in the animation-body-full/rogue/ready folder
+// API endpoint to get all SVG files in the animation-body-full folder
 app.get("/api/svg-files", (req, res) => {
     // Get character type from query parameter (default to male)
     const characterType = req.query.type || "male";
+    // Get character class from query parameter (default to rogue)
+    const characterClass = req.query.class || "rogue";
 
-    // Determine the folder path based on character type
+    // Determine the folder path based on character type and class
     let folderPath;
-    if (characterType === "female") {
+
+    if (characterClass === "captain") {
+        folderPath = path.join(__dirname, "animation-body-full/captain/steer");
+    } else if (characterType === "female") {
         folderPath = path.join(
             __dirname,
             "animation-body-full/rogue/female/ready"
@@ -62,21 +67,44 @@ app.get("/api/svg-files", (req, res) => {
     });
 });
 
-// API endpoint to get all replacement SVG files in the body-parts/rogue folder
+// API endpoint to get all replacement SVG files in the body-parts folder
 app.get("/api/replacement-files", (req, res) => {
-    const baseFolder = path.join(__dirname, "body-parts/rogue");
-    const categories = [
-        "male/mouth",
-        "male/head",
-        "male/hair",
-        "male/eyes",
-        "female/mouth",
-        "female/head",
-        "female/hair",
-        "female/eyes",
-        "male/other",
-        "default/female", // Added to include female torso and other default female parts
-    ];
+    // Get character class from query parameter (default to rogue)
+    const characterClass = req.query.class || "rogue";
+
+    let baseFolder;
+    let categories;
+
+    if (characterClass === "captain") {
+        baseFolder = path.join(__dirname, "body-parts/captain");
+        categories = [
+            "default", // Added to include default captain parts
+            "burly", // Added to include burly captain parts
+            "default/female",
+            "burly/head",
+            "burly/hair",
+            "burly/eyes",
+            "burly/mouth",
+            "default/head",
+            "default/hair",
+            "default/eyes",
+            "default/mouth",
+        ];
+    } else {
+        baseFolder = path.join(__dirname, "body-parts/rogue");
+        categories = [
+            "male/mouth",
+            "male/head",
+            "male/hair",
+            "male/eyes",
+            "female/mouth",
+            "female/head",
+            "female/hair",
+            "female/eyes",
+            "male/other",
+            "default/female", // Added to include female torso and other default female parts
+        ];
+    }
 
     const allFiles = [];
 
@@ -88,7 +116,12 @@ app.get("/api/replacement-files", (req, res) => {
                 const files = fs.readdirSync(folderPath);
                 const svgFiles = files.filter((file) => file.endsWith(".svg"));
                 svgFiles.forEach((file) => {
-                    allFiles.push(`body-parts/rogue/${category}/${file}`);
+                    // Use the correct path based on character class
+                    if (characterClass === "captain") {
+                        allFiles.push(`body-parts/captain/${category}/${file}`);
+                    } else {
+                        allFiles.push(`body-parts/rogue/${category}/${file}`);
+                    }
                 });
             } catch (error) {
                 console.error(`Error reading directory ${category}:`, error);
@@ -101,7 +134,12 @@ app.get("/api/replacement-files", (req, res) => {
         const rootFiles = fs.readdirSync(baseFolder);
         const rootSvgFiles = rootFiles.filter((file) => file.endsWith(".svg"));
         rootSvgFiles.forEach((file) => {
-            allFiles.push(`body-parts/rogue/${file}`);
+            // Use the correct path based on character class
+            if (characterClass === "captain") {
+                allFiles.push(`body-parts/captain/${file}`);
+            } else {
+                allFiles.push(`body-parts/rogue/${file}`);
+            }
         });
     } catch (error) {
         console.error("Error reading root directory:", error);
@@ -113,11 +151,33 @@ app.get("/api/replacement-files", (req, res) => {
 // API endpoint to restore all SVG files from backups
 app.post("/api/restore-all-svg", (req, res) => {
     try {
-        const readyFolderPath = path.join(
-            __dirname,
-            "animation-body-full/rogue/ready"
-        );
-        const backupsFolderPath = path.join(readyFolderPath, "backups");
+        // Get character type and class from request body
+        const characterType = req.body.characterType || "male";
+        const characterClass = req.body.characterClass || "rogue";
+
+        // Determine the folder paths based on character type and class
+        let readyFolderPath;
+        let backupsFolderPath;
+
+        if (characterClass === "captain") {
+            readyFolderPath = path.join(
+                __dirname,
+                "animation-body-full/captain/steer"
+            );
+            backupsFolderPath = path.join(readyFolderPath, "backups");
+        } else if (characterType === "female") {
+            readyFolderPath = path.join(
+                __dirname,
+                "animation-body-full/rogue/female/ready"
+            );
+            backupsFolderPath = path.join(readyFolderPath, "backups");
+        } else {
+            readyFolderPath = path.join(
+                __dirname,
+                "animation-body-full/rogue/ready"
+            );
+            backupsFolderPath = path.join(readyFolderPath, "backups");
+        }
 
         // Check if backups folder exists
         if (!fs.existsSync(backupsFolderPath)) {
@@ -175,6 +235,9 @@ app.post("/api/restore-all-svg", (req, res) => {
 app.post("/api/replace-sprite", async (req, res) => {
     try {
         const { fileName, replacementFile, spriteId } = req.body;
+        // Get character type and class from request body (default to male and rogue)
+        const characterType = req.body.characterType || "male";
+        const characterClass = req.body.characterClass || "rogue";
 
         if (!fileName || !replacementFile) {
             return res.status(400).json({
@@ -182,11 +245,27 @@ app.post("/api/replace-sprite", async (req, res) => {
             });
         }
 
-        const filePath = path.join(
-            __dirname,
-            "animation-body-full/rogue/ready",
-            fileName
-        );
+        // Determine the folder path based on character type and class
+        let folderPath;
+
+        if (characterClass === "captain") {
+            folderPath = path.join(
+                __dirname,
+                "animation-body-full/captain/steer"
+            );
+        } else if (characterType === "female") {
+            folderPath = path.join(
+                __dirname,
+                "animation-body-full/rogue/female/ready"
+            );
+        } else {
+            folderPath = path.join(
+                __dirname,
+                "animation-body-full/rogue/ready"
+            );
+        }
+
+        const filePath = path.join(folderPath, fileName);
         const replacementSvgPath = path.join(__dirname, replacementFile);
 
         // Check if files exist
@@ -201,11 +280,7 @@ app.post("/api/replace-sprite", async (req, res) => {
         }
 
         // Create a backup if it doesn't exist
-        const backupPath = path.join(
-            __dirname,
-            "animation-body-full/rogue/ready/backups",
-            fileName
-        );
+        const backupPath = path.join(folderPath, "backups", fileName);
 
         // Ensure the backups directory exists
         const backupDir = path.dirname(backupPath);
@@ -247,9 +322,42 @@ app.post("/api/replace-sprite", async (req, res) => {
         if (spriteId) {
             targetSprite = svgDoc.getElementById(spriteId);
             if (!targetSprite) {
-                return res
-                    .status(404)
-                    .json({ error: `Sprite with ID ${spriteId} not found` });
+                console.log(
+                    `Sprite with ID ${spriteId} not found, looking for elements with similar name...`
+                );
+
+                // Try to find elements with similar name or character name
+                const allElements = svgDoc.getElementsByTagName("*");
+                for (let i = 0; i < allElements.length; i++) {
+                    const element = allElements[i];
+                    if (element.nodeType === 1) {
+                        // Check for belt-related character names if we're looking for a belt
+                        if (
+                            spriteId.toLowerCase().includes("belt") ||
+                            spriteId === "sprite3"
+                        ) {
+                            const characterName = element.getAttribute(
+                                "ffdec:characterName"
+                            );
+                            if (
+                                characterName &&
+                                characterName.toLowerCase().includes("belt")
+                            ) {
+                                console.log(
+                                    `Found belt element by character name: ${characterName}`
+                                );
+                                targetSprite = element;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (!targetSprite) {
+                    return res.status(404).json({
+                        error: `Sprite with ID ${spriteId} not found`,
+                    });
+                }
             }
 
             console.log(`Using specified sprite ID: ${spriteId}`);
@@ -406,264 +514,13 @@ app.post("/api/replace-sprite", async (req, res) => {
     }
 });
 
-// API endpoint to apply a sprite to all SVG files
-app.post("/api/apply-to-all", async (req, res) => {
-    try {
-        const { replacementFile, spriteId } = req.body;
-
-        if (!replacementFile) {
-            return res
-                .status(400)
-                .json({ error: "Missing replacementFile parameter" });
-        }
-
-        const readyFolderPath = path.join(
-            __dirname,
-            "animation-body-full/rogue/ready"
-        );
-        const replacementSvgPath = path.join(__dirname, replacementFile);
-
-        // Check if replacement file exists
-        if (!fs.existsSync(replacementSvgPath)) {
-            return res
-                .status(404)
-                .json({ error: "Replacement SVG file not found" });
-        }
-
-        // Get all SVG files in the ready folder
-        const files = fs.readdirSync(readyFolderPath);
-        const svgFiles = files.filter((file) => file.endsWith(".svg"));
-
-        if (svgFiles.length === 0) {
-            return res
-                .status(404)
-                .json({ error: "No SVG files found in ready folder" });
-        }
-
-        // Read the replacement SVG file
-        const replacementSvgContent = fs.readFileSync(
-            replacementSvgPath,
-            "utf8"
-        );
-
-        // Parse the replacement SVG
-        const parser = new (require("xmldom").DOMParser)();
-        const replacementDoc = parser.parseFromString(
-            replacementSvgContent,
-            "text/xml"
-        );
-
-        // Get replacement paths
-        const replacementPaths = replacementDoc.getElementsByTagName("path");
-        if (replacementPaths.length === 0) {
-            return res
-                .status(400)
-                .json({ error: "No paths found in replacement SVG" });
-        }
-
-        const results = [];
-
-        // Process each SVG file
-        for (const fileName of svgFiles) {
-            try {
-                const filePath = path.join(readyFolderPath, fileName);
-
-                // Create a backup if it doesn't exist
-                const backupPath = path.join(
-                    readyFolderPath,
-                    "backups",
-                    fileName
-                );
-
-                // Ensure the backups directory exists
-                const backupDir = path.dirname(backupPath);
-                if (!fs.existsSync(backupDir)) {
-                    fs.mkdirSync(backupDir, { recursive: true });
-                }
-
-                if (!fs.existsSync(backupPath)) {
-                    fs.copyFileSync(filePath, backupPath);
-                }
-
-                // Read the SVG file
-                const svgContent = fs.readFileSync(filePath, "utf8");
-
-                // Parse the SVG
-                const svgDoc = parser.parseFromString(svgContent, "text/xml");
-
-                let targetSprite = null;
-                let updated = false;
-
-                // If a specific sprite ID was provided, use that
-                if (spriteId) {
-                    targetSprite = svgDoc.getElementById(spriteId);
-                    if (targetSprite) {
-                        await processSprite(targetSprite);
-                        updated = true;
-                    }
-                } else {
-                    // Otherwise, find all sprite elements
-                    const spriteElements = [];
-                    const allElements = svgDoc.getElementsByTagName("*");
-
-                    for (let i = 0; i < allElements.length; i++) {
-                        const element = allElements[i];
-                        if (
-                            element.nodeType === 1 &&
-                            element.hasAttribute("id")
-                        ) {
-                            const id = element.getAttribute("id");
-                            if (id.startsWith("sprite")) {
-                                spriteElements.push(element);
-                            }
-                        }
-                    }
-
-                    if (spriteElements.length > 0) {
-                        // Process the first sprite found
-                        await processSprite(spriteElements[0]);
-                        updated = true;
-                    }
-                }
-
-                // Function to process a sprite element
-                async function processSprite(spriteElement) {
-                    console.log(
-                        `Processing sprite element: ${spriteElement.getAttribute(
-                            "id"
-                        )} in ${fileName}`
-                    );
-
-                    // First check if this is a direct shape element with paths
-                    const directPaths =
-                        spriteElement.getElementsByTagName("path");
-                    if (directPaths.length > 0) {
-                        // Use the sprite element directly as it contains paths
-                        const shapeElement = spriteElement;
-
-                        // Clear existing paths in the shape element
-                        const existingPaths =
-                            shapeElement.getElementsByTagName("path");
-                        const pathsToRemove = [];
-                        for (let i = 0; i < existingPaths.length; i++) {
-                            pathsToRemove.push(existingPaths[i]);
-                        }
-
-                        // Remove the paths
-                        pathsToRemove.forEach((path) => {
-                            if (path.parentNode) {
-                                path.parentNode.removeChild(path);
-                            }
-                        });
-
-                        // Add new paths from the replacement SVG
-                        for (let i = 0; i < replacementPaths.length; i++) {
-                            const pathNode =
-                                replacementPaths[i].cloneNode(true);
-                            shapeElement.appendChild(pathNode);
-                        }
-
-                        return;
-                    }
-
-                    // If no direct paths, look for use elements that reference shapes
-                    const useElements =
-                        spriteElement.getElementsByTagName("use");
-                    if (useElements.length === 0) {
-                        return;
-                    }
-
-                    const useElement = useElements[0];
-                    const shapeHref = useElement.getAttribute("xlink:href");
-                    if (!shapeHref) {
-                        return;
-                    }
-
-                    const shapeId = shapeHref.substring(1);
-                    const shapeElement = svgDoc.getElementById(shapeId);
-
-                    if (!shapeElement) {
-                        return;
-                    }
-
-                    // Clear existing paths in the shape element
-                    const existingPaths =
-                        shapeElement.getElementsByTagName("path");
-                    const pathsToRemove = [];
-                    for (let i = 0; i < existingPaths.length; i++) {
-                        pathsToRemove.push(existingPaths[i]);
-                    }
-
-                    // Remove the paths
-                    pathsToRemove.forEach((path) => {
-                        if (path.parentNode) {
-                            path.parentNode.removeChild(path);
-                        }
-                    });
-
-                    // Add new paths from the replacement SVG
-                    for (let i = 0; i < replacementPaths.length; i++) {
-                        const pathNode = replacementPaths[i].cloneNode(true);
-                        shapeElement.appendChild(pathNode);
-                    }
-                }
-
-                if (updated) {
-                    // Convert back to string and save
-                    const serializer = new (require("xmldom").XMLSerializer)();
-                    const modifiedContent =
-                        serializer.serializeToString(svgDoc);
-
-                    fs.writeFileSync(filePath, modifiedContent, "utf8");
-
-                    results.push({
-                        fileName,
-                        status: "updated",
-                    });
-                } else {
-                    results.push({
-                        fileName,
-                        status: "skipped",
-                        message: spriteId
-                            ? `Sprite with ID ${spriteId} not found`
-                            : "No suitable sprite found",
-                    });
-                }
-            } catch (error) {
-                console.error(`Error processing ${fileName}:`, error);
-                results.push({
-                    fileName,
-                    status: "error",
-                    message: error.message,
-                });
-            }
-        }
-
-        const updatedCount = results.filter(
-            (r) => r.status === "updated"
-        ).length;
-        const skippedCount = results.filter(
-            (r) => r.status === "skipped"
-        ).length;
-        const errorCount = results.filter((r) => r.status === "error").length;
-
-        res.json({
-            success: true,
-            message: `Updated ${updatedCount} files, skipped ${skippedCount} files, ${errorCount} errors`,
-            results,
-        });
-    } catch (error) {
-        console.error("Error applying to all files:", error);
-        res.status(500).json({
-            error: error.message || "Failed to apply to all files",
-        });
-    }
-});
-
 // API endpoint to remove hat from an SVG
 app.post("/api/remove-hat", async (req, res) => {
     try {
         const { fileName } = req.body;
+        // Get character type and class from request body (default to male and rogue)
+        const characterType = req.body.characterType || "male";
+        const characterClass = req.body.characterClass || "rogue";
 
         if (!fileName) {
             return res
@@ -671,12 +528,25 @@ app.post("/api/remove-hat", async (req, res) => {
                 .json({ error: "Missing fileName parameter" });
         }
 
-        // Determine the folder path based on character type (extract from the request path if needed)
-        const characterType = fileName.includes("/female/") ? "female" : "male";
-        const folderPath =
-            characterType === "female"
-                ? path.join(__dirname, "animation-body-full/rogue/female/ready")
-                : path.join(__dirname, "animation-body-full/rogue/ready");
+        // Determine the folder path based on character type and class
+        let folderPath;
+
+        if (characterClass === "captain") {
+            folderPath = path.join(
+                __dirname,
+                "animation-body-full/captain/steer"
+            );
+        } else if (characterType === "female") {
+            folderPath = path.join(
+                __dirname,
+                "animation-body-full/rogue/female/ready"
+            );
+        } else {
+            folderPath = path.join(
+                __dirname,
+                "animation-body-full/rogue/ready"
+            );
+        }
 
         const filePath = path.join(folderPath, fileName);
 
@@ -792,6 +662,9 @@ app.post("/api/remove-hat", async (req, res) => {
 app.post("/api/toggle-accessories", async (req, res) => {
     try {
         const { fileName } = req.body;
+        // Get character type and class from request body (default to male and rogue)
+        const characterType = req.body.characterType || "male";
+        const characterClass = req.body.characterClass || "rogue";
 
         if (!fileName) {
             return res
@@ -799,12 +672,25 @@ app.post("/api/toggle-accessories", async (req, res) => {
                 .json({ error: "Missing fileName parameter" });
         }
 
-        // Determine the folder path based on character type (extract from the request path if needed)
-        const characterType = fileName.includes("/female/") ? "female" : "male";
-        const folderPath =
-            characterType === "female"
-                ? path.join(__dirname, "animation-body-full/rogue/female/ready")
-                : path.join(__dirname, "animation-body-full/rogue/ready");
+        // Determine the folder path based on character type and class
+        let folderPath;
+
+        if (characterClass === "captain") {
+            folderPath = path.join(
+                __dirname,
+                "animation-body-full/captain/steer"
+            );
+        } else if (characterType === "female") {
+            folderPath = path.join(
+                __dirname,
+                "animation-body-full/rogue/female/ready"
+            );
+        } else {
+            folderPath = path.join(
+                __dirname,
+                "animation-body-full/rogue/ready"
+            );
+        }
 
         const filePath = path.join(folderPath, fileName);
 
@@ -931,12 +817,28 @@ app.post("/api/toggle-accessories", async (req, res) => {
 app.post("/api/remove-hat-all", async (req, res) => {
     try {
         const { characterType } = req.body;
+        // Get character class from request body (default to rogue)
+        const characterClass = req.body.characterClass || "rogue";
 
-        // Determine the folder path based on character type
-        const folderPath =
-            characterType === "female"
-                ? path.join(__dirname, "animation-body-full/rogue/female/ready")
-                : path.join(__dirname, "animation-body-full/rogue/ready");
+        // Determine the folder path based on character type and class
+        let folderPath;
+
+        if (characterClass === "captain") {
+            folderPath = path.join(
+                __dirname,
+                "animation-body-full/captain/steer"
+            );
+        } else if (characterType === "female") {
+            folderPath = path.join(
+                __dirname,
+                "animation-body-full/rogue/female/ready"
+            );
+        } else {
+            folderPath = path.join(
+                __dirname,
+                "animation-body-full/rogue/ready"
+            );
+        }
 
         // Check if folder exists
         if (!fs.existsSync(folderPath)) {
@@ -1096,11 +998,28 @@ app.post("/api/apply-to-all", async (req, res) => {
                 .json({ error: "Missing replacementFile parameter" });
         }
 
-        // Determine the folder path based on character type
-        const readyFolderPath =
-            characterType === "female"
-                ? path.join(__dirname, "animation-body-full/rogue/female/ready")
-                : path.join(__dirname, "animation-body-full/rogue/ready");
+        // Get character class from request body (default to rogue)
+        const characterClass = req.body.characterClass || "rogue";
+
+        // Determine the folder path based on character type and class
+        let readyFolderPath;
+
+        if (characterClass === "captain") {
+            readyFolderPath = path.join(
+                __dirname,
+                "animation-body-full/captain/steer"
+            );
+        } else if (characterType === "female") {
+            readyFolderPath = path.join(
+                __dirname,
+                "animation-body-full/rogue/female/ready"
+            );
+        } else {
+            readyFolderPath = path.join(
+                __dirname,
+                "animation-body-full/rogue/ready"
+            );
+        }
 
         const replacementSvgPath = path.join(__dirname, replacementFile);
 
@@ -1150,11 +1069,23 @@ app.post("/api/apply-to-all", async (req, res) => {
                 const filePath = path.join(readyFolderPath, fileName);
 
                 // Create a backup if it doesn't exist
-                const backupPath = path.join(
-                    readyFolderPath,
-                    "backups",
-                    fileName
-                );
+                let backupPath;
+
+                if (characterClass === "captain") {
+                    // For captain, use a different backup path structure
+                    backupPath = path.join(
+                        __dirname,
+                        "animation-body-full/captain/steer/backups",
+                        fileName
+                    );
+                } else {
+                    // For rogue, use the original backup path structure
+                    backupPath = path.join(
+                        readyFolderPath,
+                        "backups",
+                        fileName
+                    );
+                }
 
                 // Ensure the backups directory exists
                 const backupDir = path.dirname(backupPath);
@@ -1178,6 +1109,41 @@ app.post("/api/apply-to-all", async (req, res) => {
                 // If a specific sprite ID was provided, use that
                 if (spriteId) {
                     targetSprite = svgDoc.getElementById(spriteId);
+                    if (!targetSprite) {
+                        console.log(
+                            `Sprite with ID ${spriteId} not found in ${fileName}, looking for elements with similar name...`
+                        );
+
+                        // Try to find elements with similar name or character name
+                        const allElements = svgDoc.getElementsByTagName("*");
+                        for (let i = 0; i < allElements.length; i++) {
+                            const element = allElements[i];
+                            if (element.nodeType === 1) {
+                                // Check for belt-related character names if we're looking for a belt
+                                if (
+                                    spriteId.toLowerCase().includes("belt") ||
+                                    spriteId === "sprite3"
+                                ) {
+                                    const characterName = element.getAttribute(
+                                        "ffdec:characterName"
+                                    );
+                                    if (
+                                        characterName &&
+                                        characterName
+                                            .toLowerCase()
+                                            .includes("belt")
+                                    ) {
+                                        console.log(
+                                            `Found belt element by character name: ${characterName}`
+                                        );
+                                        targetSprite = element;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     if (targetSprite) {
                         await processSprite(targetSprite);
                         updated = true;
@@ -1342,6 +1308,379 @@ app.post("/api/apply-to-all", async (req, res) => {
         console.error("Error applying to all files:", error);
         res.status(500).json({
             error: error.message || "Failed to apply to all files",
+        });
+    }
+});
+
+// API endpoint to remove sprite3 (belt) from captain SVGs
+app.post("/api/remove-captain-belt", async (req, res) => {
+    try {
+        // Get character class from request body (default to captain)
+        const characterClass = req.body.characterClass || "captain";
+
+        if (characterClass !== "captain") {
+            return res.status(400).json({
+                error: "This endpoint only works for captain character class",
+            });
+        }
+
+        // Determine the folder path
+        const folderPath = path.join(
+            __dirname,
+            "animation-body-full/captain/steer"
+        );
+
+        // Check if folder exists
+        if (!fs.existsSync(folderPath)) {
+            return res.status(404).json({
+                error: "Captain folder not found",
+            });
+        }
+
+        // Get all SVG files in the folder
+        const files = fs
+            .readdirSync(folderPath)
+            .filter((file) => file.endsWith(".svg"));
+
+        if (files.length === 0) {
+            return res.status(404).json({ error: "No SVG files found" });
+        }
+
+        const results = [];
+
+        // Process each file
+        for (const fileName of files) {
+            try {
+                const filePath = path.join(folderPath, fileName);
+
+                // Create a backup if it doesn't exist
+                const backupDir = path.join(folderPath, "backups");
+                if (!fs.existsSync(backupDir)) {
+                    fs.mkdirSync(backupDir, { recursive: true });
+                }
+
+                const backupPath = path.join(backupDir, fileName);
+                if (!fs.existsSync(backupPath)) {
+                    fs.copyFileSync(filePath, backupPath);
+                }
+
+                // Read the SVG file
+                const svgContent = fs.readFileSync(filePath, "utf8");
+
+                // Parse the SVG
+                const parser = new (require("xmldom").DOMParser)();
+                const svgDoc = parser.parseFromString(svgContent, "text/xml");
+
+                // Find all use elements that reference sprite3
+                let removedCount = 0;
+                const useElements = svgDoc.getElementsByTagName("use");
+
+                for (let i = 0; i < useElements.length; i++) {
+                    const element = useElements[i];
+                    if (element.nodeType === 1) {
+                        const href = element.getAttribute("xlink:href");
+                        if (href === "#sprite3") {
+                            console.log(
+                                `Found sprite3 reference in ${fileName}`
+                            );
+
+                            // Remove the element
+                            if (element.parentNode) {
+                                element.parentNode.removeChild(element);
+                                removedCount++;
+                                console.log(
+                                    `Removed sprite3 reference from ${fileName}`
+                                );
+                            }
+                        }
+                    }
+                }
+
+                // Also look for elements with id="sprite3"
+                const sprite3Element = svgDoc.getElementById("sprite3");
+                if (sprite3Element) {
+                    console.log(
+                        `Found element with id="sprite3" in ${fileName}`
+                    );
+                    if (sprite3Element.parentNode) {
+                        sprite3Element.parentNode.removeChild(sprite3Element);
+                        removedCount++;
+                        console.log(
+                            `Removed element with id="sprite3" from ${fileName}`
+                        );
+                    }
+                }
+
+                // Convert back to string and save
+                const serializer = new (require("xmldom").XMLSerializer)();
+                const modifiedContent = serializer.serializeToString(svgDoc);
+
+                fs.writeFileSync(filePath, modifiedContent, "utf8");
+
+                results.push({
+                    fileName,
+                    status: "success",
+                    removedCount,
+                });
+            } catch (error) {
+                console.error(`Error processing ${fileName}:`, error);
+                results.push({
+                    fileName,
+                    status: "error",
+                    message: error.message,
+                });
+            }
+        }
+
+        const successCount = results.filter(
+            (r) => r.status === "success"
+        ).length;
+        const totalRemoved = results.reduce(
+            (sum, r) => sum + (r.removedCount || 0),
+            0
+        );
+        const errorCount = results.filter((r) => r.status === "error").length;
+
+        res.json({
+            success: true,
+            message: `Removed sprite3 (belt) from ${successCount} files (${totalRemoved} elements total), ${errorCount} errors`,
+            results,
+        });
+    } catch (error) {
+        console.error("Error removing sprite3 from captain files:", error);
+        res.status(500).json({
+            error:
+                error.message || "Failed to remove sprite3 from captain files",
+        });
+    }
+});
+
+// API endpoint to replace belt with invisible version in captain SVGs
+app.post("/api/replace-with-invisible-belt", async (req, res) => {
+    try {
+        // Get character class from request body (default to captain)
+        const characterClass = req.body.characterClass || "captain";
+
+        if (characterClass !== "captain") {
+            return res.status(400).json({
+                error: "This endpoint only works for captain character class",
+            });
+        }
+
+        // Determine the folder path
+        const folderPath = path.join(
+            __dirname,
+            "animation-body-full/captain/steer"
+        );
+
+        // Path to the invisible belt SVG
+        const invisibleBeltPath = path.join(
+            __dirname,
+            "body-parts/captain/default/invisible_belt.svg"
+        );
+
+        // Check if folder exists
+        if (!fs.existsSync(folderPath)) {
+            return res.status(404).json({
+                error: "Captain folder not found",
+            });
+        }
+
+        // Check if invisible belt file exists
+        if (!fs.existsSync(invisibleBeltPath)) {
+            return res.status(404).json({
+                error: "Invisible belt SVG file not found",
+            });
+        }
+
+        // Read the invisible belt SVG
+        const invisibleBeltContent = fs.readFileSync(invisibleBeltPath, "utf8");
+
+        // Parse the invisible belt SVG
+        const parser = new (require("xmldom").DOMParser)();
+        const invisibleBeltDoc = parser.parseFromString(
+            invisibleBeltContent,
+            "text/xml"
+        );
+
+        // Get the paths from the invisible belt SVG
+        const invisibleBeltPaths =
+            invisibleBeltDoc.getElementsByTagName("path");
+        if (invisibleBeltPaths.length === 0) {
+            return res.status(400).json({
+                error: "No paths found in the invisible belt SVG",
+            });
+        }
+
+        // Get all SVG files in the folder
+        const files = fs
+            .readdirSync(folderPath)
+            .filter((file) => file.endsWith(".svg"));
+
+        if (files.length === 0) {
+            return res.status(404).json({ error: "No SVG files found" });
+        }
+
+        const results = [];
+
+        // Process each file
+        for (const fileName of files) {
+            try {
+                const filePath = path.join(folderPath, fileName);
+
+                // Create a backup if it doesn't exist
+                const backupDir = path.join(folderPath, "backups");
+                if (!fs.existsSync(backupDir)) {
+                    fs.mkdirSync(backupDir, { recursive: true });
+                }
+
+                const backupPath = path.join(backupDir, fileName);
+                if (!fs.existsSync(backupPath)) {
+                    fs.copyFileSync(filePath, backupPath);
+                }
+
+                // Read the SVG file
+                const svgContent = fs.readFileSync(filePath, "utf8");
+
+                // Parse the SVG
+                const svgDoc = parser.parseFromString(svgContent, "text/xml");
+
+                // Find sprite3 (belt) element
+                const sprite3Element = svgDoc.getElementById("sprite3");
+                let updated = false;
+
+                if (sprite3Element) {
+                    console.log(`Found sprite3 element in ${fileName}`);
+
+                    // Find shape elements within sprite3
+                    const shapeElements =
+                        sprite3Element.getElementsByTagName("*");
+                    for (let i = 0; i < shapeElements.length; i++) {
+                        const element = shapeElements[i];
+                        if (element.nodeName === "path") {
+                            // Clear existing paths
+                            while (element.firstChild) {
+                                element.removeChild(element.firstChild);
+                            }
+
+                            // Replace with invisible belt paths
+                            for (
+                                let j = 0;
+                                j < invisibleBeltPaths.length;
+                                j++
+                            ) {
+                                const pathNode =
+                                    invisibleBeltPaths[j].cloneNode(true);
+                                element.appendChild(pathNode);
+                            }
+
+                            updated = true;
+                        }
+                    }
+
+                    // If no direct paths found, look for use elements
+                    if (!updated) {
+                        const useElements =
+                            sprite3Element.getElementsByTagName("use");
+                        if (useElements.length > 0) {
+                            const useElement = useElements[0];
+                            const shapeHref =
+                                useElement.getAttribute("xlink:href");
+                            if (shapeHref) {
+                                const shapeId = shapeHref.substring(1);
+                                const shapeElement =
+                                    svgDoc.getElementById(shapeId);
+
+                                if (shapeElement) {
+                                    // Clear existing paths in the shape element
+                                    const existingPaths =
+                                        shapeElement.getElementsByTagName(
+                                            "path"
+                                        );
+                                    const pathsToRemove = [];
+                                    for (
+                                        let i = 0;
+                                        i < existingPaths.length;
+                                        i++
+                                    ) {
+                                        pathsToRemove.push(existingPaths[i]);
+                                    }
+
+                                    // Remove the paths
+                                    pathsToRemove.forEach((path) => {
+                                        if (path.parentNode) {
+                                            path.parentNode.removeChild(path);
+                                        }
+                                    });
+
+                                    // Add new paths from the invisible belt
+                                    for (
+                                        let i = 0;
+                                        i < invisibleBeltPaths.length;
+                                        i++
+                                    ) {
+                                        const pathNode =
+                                            invisibleBeltPaths[i].cloneNode(
+                                                true
+                                            );
+                                        shapeElement.appendChild(pathNode);
+                                    }
+
+                                    updated = true;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (updated) {
+                    // Convert back to string and save
+                    const serializer = new (require("xmldom").XMLSerializer)();
+                    const modifiedContent =
+                        serializer.serializeToString(svgDoc);
+
+                    fs.writeFileSync(filePath, modifiedContent, "utf8");
+
+                    results.push({
+                        fileName,
+                        status: "success",
+                    });
+                } else {
+                    results.push({
+                        fileName,
+                        status: "skipped",
+                        message: "No belt found or could not update",
+                    });
+                }
+            } catch (error) {
+                console.error(`Error processing ${fileName}:`, error);
+                results.push({
+                    fileName,
+                    status: "error",
+                    message: error.message,
+                });
+            }
+        }
+
+        const successCount = results.filter(
+            (r) => r.status === "success"
+        ).length;
+        const skippedCount = results.filter(
+            (r) => r.status === "skipped"
+        ).length;
+        const errorCount = results.filter((r) => r.status === "error").length;
+
+        res.json({
+            success: true,
+            message: `Replaced belt with invisible version in ${successCount} files, skipped ${skippedCount} files, ${errorCount} errors`,
+            results,
+        });
+    } catch (error) {
+        console.error("Error replacing belts with invisible version:", error);
+        res.status(500).json({
+            error:
+                error.message ||
+                "Failed to replace belts with invisible version",
         });
     }
 });

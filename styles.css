@@ -431,6 +431,40 @@ input[type="number"] {
     background-color: #e67e22;
 }
 
+.action-button.info {
+    background-color: #3498db;
+    border: 2px solid #2980b9;
+    color: white;
+}
+
+.action-button.info:hover {
+    background-color: #2980b9;
+}
+
+/* Special styling for the Remove Belt button */
+#removeBelt {
+    background-color: #8b4513;
+    border: 2px solid #5d2906;
+    color: white;
+    font-weight: bold;
+}
+
+#removeBelt:hover {
+    background-color: #5d2906;
+}
+
+/* Special styling for the Invisible Belt button */
+#invisibleBelt {
+    background-color: #9b59b6;
+    border: 2px solid #8e44ad;
+    color: white;
+    font-weight: bold;
+}
+
+#invisibleBelt:hover {
+    background-color: #8e44ad;
+}
+
 .preview-container {
     margin-top: 20px;
     padding: 15px;

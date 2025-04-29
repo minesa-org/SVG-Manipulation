@@ -8,8 +8,9 @@ let animationInterval = null;
 let svgFiles = [];
 let currentFileIndex = 0;
 
-// Character type (male/female)
+// Character type (male/female) and class (rogue/captain)
 let characterType = "male";
+let characterClass = "rogue";
 
 // Initialize the application
 document.addEventListener("DOMContentLoaded", () => {
@@ -37,11 +38,31 @@ document.addEventListener("DOMContentLoaded", () => {
         .getElementById("selectFemale")
         .addEventListener("click", () => setCharacterType("female"));
 
+    // Add event listeners for character class selection
+    document
+        .getElementById("selectRogue")
+        .addEventListener("click", () => setCharacterClass("rogue"));
+    document
+        .getElementById("selectCaptain")
+        .addEventListener("click", () => setCharacterClass("captain"));
+
     // Add event listeners for special actions
     document.getElementById("removeHat").addEventListener("click", removeHat);
     document
         .getElementById("toggleAccessories")
         .addEventListener("click", toggleAccessories);
+
+    // Add event listener for remove belt button if it exists
+    const removeBeltButton = document.getElementById("removeBelt");
+    if (removeBeltButton) {
+        removeBeltButton.addEventListener("click", removeCaptainBelt);
+    }
+
+    // Add event listener for invisible belt button if it exists
+    const invisibleBeltButton = document.getElementById("invisibleBelt");
+    if (invisibleBeltButton) {
+        invisibleBeltButton.addEventListener("click", makeInvisibleBelt);
+    }
 
     // Add event listeners for animation controls
     document
@@ -58,8 +79,10 @@ document.addEventListener("DOMContentLoaded", () => {
 // Fetch SVG files from the server
 async function fetchSvgFiles() {
     try {
-        // Include character type in the request
-        const response = await fetch(`/api/svg-files?type=${characterType}`);
+        // Include character type and class in the request
+        const response = await fetch(
+            `/api/svg-files?type=${characterType}&class=${characterClass}`
+        );
         if (!response.ok) {
             throw new Error(`Failed to fetch files: ${response.statusText}`);
         }
@@ -111,7 +134,9 @@ function populateFileSelector(svgFiles) {
 // Fetch replacement SVG files
 async function fetchReplacementFiles() {
     try {
-        const response = await fetch("/api/replacement-files");
+        const response = await fetch(
+            `/api/replacement-files?class=${characterClass}`
+        );
         if (!response.ok) {
             throw new Error(`Failed to fetch files: ${response.statusText}`);
         }
@@ -137,27 +162,53 @@ function populateReplacementFileSelector(files) {
     }
 
     // Group files by category
-    const categories = {
-        "male/mouth": [],
-        "male/head": [],
-        "male/hair": [],
-        "male/eyes": [],
-        "female/mouth": [],
-        "female/head": [],
-        "female/hair": [],
-        "female/eyes": [],
-        "male/other": [],
-        root: [],
-    };
+    let categories = {};
+
+    if (characterClass === "captain") {
+        categories = {
+            "default/female": [],
+            "burly/head": [],
+            "burly/hair": [],
+            "burly/eyes": [],
+            "burly/mouth": [],
+            "default/head": [],
+            "default/hair": [],
+            "default/eyes": [],
+            "default/mouth": [],
+            root: [],
+        };
+    } else {
+        categories = {
+            "male/mouth": [],
+            "male/head": [],
+            "male/hair": [],
+            "male/eyes": [],
+            "female/mouth": [],
+            "female/head": [],
+            "female/hair": [],
+            "female/eyes": [],
+            "male/other": [],
+            "default/female": [],
+            root: [],
+        };
+    }
 
     // Sort files into categories
     files.forEach((file) => {
         let categorized = false;
         for (const category in categories) {
-            if (file.includes(`body-parts/rogue/${category}/`)) {
-                categories[category].push(file);
-                categorized = true;
-                break;
+            if (characterClass === "captain") {
+                if (file.includes(`body-parts/captain/${category}/`)) {
+                    categories[category].push(file);
+                    categorized = true;
+                    break;
+                }
+            } else {
+                if (file.includes(`body-parts/rogue/${category}/`)) {
+                    categories[category].push(file);
+                    categorized = true;
+                    break;
+                }
             }
         }
         if (!categorized) {
@@ -223,9 +274,16 @@ async function loadSelectedSvg() {
     updateStatus(`Loading ${selectedFile}...`);
 
     try {
-        const response = await fetch(
-            `animation-body-full/rogue/ready/${selectedFile}`
-        );
+        let filePath;
+        if (characterClass === "captain") {
+            filePath = `animation-body-full/captain/steer/${selectedFile}`;
+        } else if (characterType === "female") {
+            filePath = `animation-body-full/rogue/female/ready/${selectedFile}`;
+        } else {
+            filePath = `animation-body-full/rogue/ready/${selectedFile}`;
+        }
+
+        const response = await fetch(filePath);
         if (!response.ok) {
             throw new Error(`Failed to load file: ${response.statusText}`);
         }
@@ -278,6 +336,7 @@ async function replaceSprite() {
                 replacementFile,
                 spriteId: spriteId || undefined, // Only send if not empty
                 characterType: characterType,
+                characterClass: characterClass,
             }),
         });
 
@@ -324,7 +383,10 @@ async function restoreAllSvgFiles() {
             headers: {
                 "Content-Type": "application/json",
             },
-            body: JSON.stringify({}),
+            body: JSON.stringify({
+                characterType: characterType,
+                characterClass: characterClass,
+            }),
         });
 
         if (!response.ok) {
@@ -612,6 +674,152 @@ function setCharacterType(type) {
     }
 }
 
+// Set the character class (rogue/captain)
+function setCharacterClass(classType) {
+    if (classType !== characterClass) {
+        characterClass = classType;
+
+        // Update UI
+        document
+            .getElementById("selectRogue")
+            .classList.toggle("active", classType === "rogue");
+        document
+            .getElementById("selectCaptain")
+            .classList.toggle("active", classType === "captain");
+
+        // Show/hide the belt-related buttons based on character class
+        const removeBeltButton = document.getElementById("removeBelt");
+        if (removeBeltButton) {
+            removeBeltButton.style.display =
+                classType === "captain" ? "inline-block" : "none";
+        }
+
+        const invisibleBeltButton = document.getElementById("invisibleBelt");
+        if (invisibleBeltButton) {
+            invisibleBeltButton.style.display =
+                classType === "captain" ? "inline-block" : "none";
+        }
+
+        // Fetch files for the selected character class
+        fetchSvgFiles();
+        fetchReplacementFiles();
+
+        // Update status
+        updateStatus(`Switched to ${classType} class`, "success");
+    }
+}
+
+// Remove sprite3 (belt) from captain SVGs
+async function removeCaptainBelt() {
+    if (characterClass !== "captain") {
+        updateStatus(
+            "This action only works for the Captain character class",
+            "warning"
+        );
+        return;
+    }
+
+    if (
+        !confirm(
+            "Are you sure you want to remove sprite3 (belt) from all Captain SVGs? This will modify all files."
+        )
+    ) {
+        return;
+    }
+
+    updateStatus("Removing sprite3 (belt) from all Captain SVGs...");
+
+    try {
+        // Call the server-side API to remove belts
+        const response = await fetch("/api/remove-captain-belt", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                characterClass: "captain",
+            }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || "Failed to remove sprite3 (belt)");
+        }
+
+        // Reload the SVG to show the changes if one is loaded
+        if (currentSvgFile) {
+            await loadSelectedSvg();
+        }
+
+        updateStatus(
+            result.message ||
+                "Sprite3 (belt) removed successfully from all Captain SVGs",
+            "success"
+        );
+    } catch (error) {
+        console.error("Error removing sprite3 (belt):", error);
+        updateStatus(
+            `Error removing sprite3 (belt): ${error.message}`,
+            "error"
+        );
+    }
+}
+
+// Make belt invisible in captain SVGs
+async function makeInvisibleBelt() {
+    if (characterClass !== "captain") {
+        updateStatus(
+            "This action only works for the Captain character class",
+            "warning"
+        );
+        return;
+    }
+
+    if (
+        !confirm(
+            "Are you sure you want to make the belt (sprite3) invisible in all Captain SVGs? This will modify all files."
+        )
+    ) {
+        return;
+    }
+
+    updateStatus("Making belt invisible in all Captain SVGs...");
+
+    try {
+        // Call the server-side API to replace with invisible belt
+        const response = await fetch("/api/replace-with-invisible-belt", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                characterClass: "captain",
+            }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || "Failed to make belt invisible");
+        }
+
+        // Reload the SVG to show the changes if one is loaded
+        if (currentSvgFile) {
+            await loadSelectedSvg();
+        }
+
+        updateStatus(
+            result.message ||
+                "Belt made invisible successfully in all Captain SVGs",
+            "success"
+        );
+    } catch (error) {
+        console.error("Error making belt invisible:", error);
+        updateStatus(`Error making belt invisible: ${error.message}`, "error");
+    }
+}
+
 // Remove hat from all SVG files
 async function removeHat() {
     updateStatus("Removing hats from all files...");
@@ -625,6 +833,7 @@ async function removeHat() {
             },
             body: JSON.stringify({
                 characterType: characterType,
+                characterClass: characterClass,
             }),
         });
 
@@ -667,6 +876,7 @@ async function toggleAccessories() {
             },
             body: JSON.stringify({
                 fileName: currentSvgFile,
+                characterClass: characterClass,
             }),
         });
 
@@ -720,7 +930,9 @@ async function applyToAllFiles() {
             },
             body: JSON.stringify({
                 replacementFile,
-                spriteId: spriteId || undefined, // Only send if not empty
+                spriteId: spriteId || undefined, // Only send if not empty,
+                characterType: characterType,
+                characterClass: characterClass,
             }),
         });
 

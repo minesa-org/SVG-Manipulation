@@ -37,6 +37,21 @@
                             </button>
                         </div>
                     </div>
+                    <div class="character-selector">
+                        <label>Character Class:</label>
+                        <div class="character-type-buttons">
+                            <button
+                                id="selectRogue"
+                                class="character-button active">
+                                Rogue
+                            </button>
+                            <button
+                                id="selectCaptain"
+                                class="character-button">
+                                Captain
+                            </button>
+                        </div>
+                    </div>
                     <select id="svgFileSelector">
                         <option value="">Select a file...</option>
                         <!-- Files will be populated by JavaScript -->
@@ -97,6 +112,18 @@
                                     id="toggleAccessories"
                                     class="action-button warning">
                                     Toggle Accessories
+                                </button>
+                                <button
+                                    id="removeBelt"
+                                    class="action-button warning"
+                                    style="display: none">
+                                    Remove Belt (sprite3)
+                                </button>
+                                <button
+                                    id="invisibleBelt"
+                                    class="action-button info"
+                                    style="display: none">
+                                    Make Belt Invisible
                                 </button>
                             </div>
                         </div>

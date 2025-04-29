@@ -1,0 +1,8 @@
+/* Additional styles for belt sprites */
+.belt-sprite {
+    background-color: #f5deb3;
+    border-left: 4px solid #8b4513;
+    padding-left: 8px;
+}
+
+/* Add this to your existing CSS file */
