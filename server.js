@@ -75,6 +75,7 @@ app.get("/api/replacement-files", (req, res) => {
         "female/hair",
         "female/eyes",
         "male/other",
+        "default/female", // Added to include female torso and other default female parts
     ];
 
     const allFiles = [];
