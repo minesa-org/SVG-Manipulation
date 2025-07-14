@@ -119,6 +119,7 @@
                                     <button
                                         id="analyzeSprites"
                                         class="btn btn-secondary btn-sm"
+                                        data-state="hidden"
                                     >
                                         Show All
                                     </button>
@@ -128,6 +129,29 @@
                                 id="spritesList"
                                 class="sprites-list"
                             ></div>
+
+                            <!-- Color Picker Interface -->
+                            <div
+                                id="colorPickerSection"
+                                class="color-picker-section"
+                                style="display: none"
+                            >
+                                <div class="color-picker-header">
+                                    <h4 id="selectedSpriteName">
+                                        Selected Sprite
+                                    </h4>
+                                    <span
+                                        id="selectedSpriteType"
+                                        class="sprite-type-badge"
+                                    ></span>
+                                </div>
+                                <div
+                                    id="colorSwatches"
+                                    class="color-swatches"
+                                >
+                                    <!-- Color swatches will be populated by JavaScript -->
+                                </div>
+                            </div>
                             <div class="form-actions">
                                 <button
                                     id="replaceSprite"

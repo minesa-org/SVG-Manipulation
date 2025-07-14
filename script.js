@@ -354,9 +354,33 @@ async function replaceSprite() {
             throw new Error(result.error || "Failed to replace sprite");
         }
 
-        // Reload the SVG to show the changes if one is loaded
+        // Reload the SVG to show the changes if one is loaded, but preserve any color modifications
         if (currentSvgFile) {
+            // Store the current modified sprite data before reloading
+            const currentSpriteId = document
+                .getElementById("spriteId")
+                .value.trim();
+            let preservedModifications = null;
+
+            if (modifiedSvgContent && currentSpriteId) {
+                preservedModifications = extractModifiedSprite(currentSpriteId);
+            }
+
             await loadSelectedSvg();
+
+            // If we had modifications, reapply them to the newly loaded SVG
+            if (
+                preservedModifications &&
+                preservedModifications.hasModifications
+            ) {
+                console.log(
+                    "Reapplying color modifications after sprite replacement",
+                );
+                await reapplyColorModifications(
+                    currentSpriteId,
+                    preservedModifications,
+                );
+            }
         }
 
         updateStatus(
@@ -375,15 +399,22 @@ async function replaceSprite() {
 
 // Restore all SVG files from backups
 async function restoreAllSvgFiles() {
+    const animationFolder = document.getElementById("animationFolder").value;
+
+    if (!animationFolder) {
+        updateStatus("Please select an animation folder first", "warning");
+        return;
+    }
+
     if (
         !confirm(
-            "Are you sure you want to restore ALL SVG files to their original state? This cannot be undone.",
+            `Are you sure you want to restore ALL SVG files in '${animationFolder}' to their original state? This cannot be undone.`,
         )
     ) {
         return;
     }
 
-    updateStatus("Restoring all SVG files...");
+    updateStatus(`Restoring all SVG files in ${animationFolder}...`);
 
     try {
         const response = await fetch("/api/restore-all-svg", {
@@ -391,7 +422,7 @@ async function restoreAllSvgFiles() {
             headers: {
                 "Content-Type": "application/json",
             },
-            body: JSON.stringify({}),
+            body: JSON.stringify({ animationFolder }),
         });
 
         if (!response.ok) {
@@ -438,17 +469,31 @@ function updateStatus(message, type = "") {
     }
 }
 
-// Analyze the current SVG and list all sprite IDs
+// Toggle sprite list visibility and analyze sprites
 function analyzeSprites() {
     console.log("analyzeSprites function called");
+
+    const spritesList = document.getElementById("spritesList");
+    const analyzeButton = document.getElementById("analyzeSprites");
+    const currentState = analyzeButton.getAttribute("data-state");
+
+    // Toggle visibility
+    if (currentState === "visible") {
+        // Hide the list
+        spritesList.classList.remove("active");
+        spritesList.style.display = "none";
+        analyzeButton.setAttribute("data-state", "hidden");
+        analyzeButton.textContent = "Show All";
+
+        // Hide color picker section
+        document.getElementById("colorPickerSection").style.display = "none";
+        return;
+    }
 
     if (!modifiedSvgContent) {
         updateStatus("Please load an SVG file first", "warning");
         return;
     }
-
-    // Get the sprites list element
-    const spritesList = document.getElementById("spritesList");
 
     // Clear any existing content
     spritesList.innerHTML = "";
@@ -624,28 +669,35 @@ function analyzeSprites() {
 
                 // Add click handler to select this sprite
                 item.addEventListener("click", () => {
+                    // Remove previous selection
+                    document
+                        .querySelectorAll(".sprite-item")
+                        .forEach((el) => el.classList.remove("selected"));
+
+                    // Mark this item as selected
+                    item.classList.add("selected");
+
+                    // Set the sprite ID in the input field
                     document.getElementById("spriteId").value = sprite.id;
-                    spritesList.classList.remove("active");
+
+                    // Show color picker for this sprite
+                    showColorPicker(sprite);
+
+                    updateStatus(
+                        `Selected sprite: ${sprite.name || sprite.id}`,
+                        "success",
+                    );
                 });
 
                 spritesList.appendChild(item);
             });
         }
 
-        // Add a close button
-        const closeButton = document.createElement("div");
-        closeButton.className = "close-button";
-        closeButton.textContent = "Close";
-        closeButton.addEventListener("click", () => {
-            spritesList.classList.remove("active");
-        });
-
-        spritesList.appendChild(document.createElement("hr"));
-        spritesList.appendChild(closeButton);
-
-        // Show the list
+        // Show the list and update button state
         spritesList.classList.add("active");
         spritesList.style.display = "block";
+        analyzeButton.setAttribute("data-state", "visible");
+        analyzeButton.textContent = "Hide Sprites";
 
         console.log(
             `Found ${sprites.length} sprites, list should now be visible`,
@@ -653,6 +705,695 @@ function analyzeSprites() {
     } catch (error) {
         console.error("Error analyzing sprites:", error);
         updateStatus(`Error analyzing sprites: ${error.message}`, "error");
+    }
+}
+
+// Show color picker interface for selected sprite
+function showColorPicker(sprite) {
+    const colorPickerSection = document.getElementById("colorPickerSection");
+    const selectedSpriteName = document.getElementById("selectedSpriteName");
+    const selectedSpriteType = document.getElementById("selectedSpriteType");
+    const colorSwatches = document.getElementById("colorSwatches");
+
+    // Set sprite name
+    selectedSpriteName.textContent = sprite.name || sprite.id;
+
+    // Determine sprite type and set badge
+    const spriteName = (sprite.name || "").toLowerCase();
+    let spriteType = "unknown";
+    if (spriteName.includes("mouth")) {
+        spriteType = "mouth";
+    } else if (spriteName.includes("eye")) {
+        spriteType = "eye";
+    } else if (spriteName.includes("hair")) {
+        spriteType = "hair";
+    } else if (spriteName.includes("face") || spriteName.includes("head")) {
+        spriteType = "head";
+    }
+
+    selectedSpriteType.textContent = spriteType;
+    selectedSpriteType.className = `sprite-type-badge ${spriteType}`;
+
+    // Extract colors from the sprite
+    const colors = extractColorsFromSprite(sprite);
+
+    // Clear existing swatches
+    colorSwatches.innerHTML = "";
+
+    // Create color swatches
+    colors.forEach((color, index) => {
+        const swatch = createColorSwatch(color, index, sprite);
+        colorSwatches.appendChild(swatch);
+    });
+
+    // Show the color picker section
+    colorPickerSection.style.display = "block";
+}
+
+// Extract colors from sprite element
+function extractColorsFromSprite(sprite) {
+    const colors = new Set();
+
+    console.log(`Extracting colors from sprite: ${sprite.id}`);
+
+    try {
+        // Parse the current SVG to get the sprite element
+        const parser = new DOMParser();
+        const svgDoc = parser.parseFromString(
+            modifiedSvgContent,
+            "image/svg+xml",
+        );
+        const spriteElement = svgDoc.getElementById(sprite.id);
+
+        if (!spriteElement) {
+            console.log(`Sprite element ${sprite.id} not found`);
+            return [];
+        }
+
+        // Function to extract colors from an element
+        function extractFromElement(element, elementType = "element") {
+            // Extract fill color
+            const fill = element.getAttribute("fill");
+            if (
+                fill &&
+                fill !== "none" &&
+                fill !== "transparent" &&
+                fill !== "inherit"
+            ) {
+                colors.add(fill);
+                console.log(`Found fill color in ${elementType}: ${fill}`);
+            }
+
+            // Extract stroke color
+            const stroke = element.getAttribute("stroke");
+            if (
+                stroke &&
+                stroke !== "none" &&
+                stroke !== "transparent" &&
+                stroke !== "inherit"
+            ) {
+                colors.add(stroke);
+                console.log(`Found stroke color in ${elementType}: ${stroke}`);
+            }
+
+            // Check style attribute for colors
+            const style = element.getAttribute("style");
+            if (style) {
+                const fillMatch = style.match(/fill\s*:\s*([^;]+)/i);
+                const strokeMatch = style.match(/stroke\s*:\s*([^;]+)/i);
+
+                if (
+                    fillMatch &&
+                    fillMatch[1] !== "none" &&
+                    fillMatch[1] !== "transparent"
+                ) {
+                    const fillColor = fillMatch[1].trim();
+                    colors.add(fillColor);
+                    console.log(
+                        `Found fill color in ${elementType} style: ${fillColor}`,
+                    );
+                }
+                if (
+                    strokeMatch &&
+                    strokeMatch[1] !== "none" &&
+                    strokeMatch[1] !== "transparent"
+                ) {
+                    const strokeColor = strokeMatch[1].trim();
+                    colors.add(strokeColor);
+                    console.log(
+                        `Found stroke color in ${elementType} style: ${strokeColor}`,
+                    );
+                }
+            }
+        }
+
+        // Extract colors from all elements within the sprite
+        const allElements = spriteElement.querySelectorAll("*");
+        allElements.forEach((element) => {
+            extractFromElement(element, element.tagName);
+        });
+
+        // Also extract from the sprite element itself
+        extractFromElement(spriteElement, "sprite");
+
+        // Check use elements that might reference shapes
+        const useElements = spriteElement.querySelectorAll("use");
+        useElements.forEach((useEl) => {
+            const href =
+                useEl.getAttribute("xlink:href") || useEl.getAttribute("href");
+            if (href) {
+                const referencedElement = svgDoc.querySelector(href);
+                if (referencedElement) {
+                    console.log(`Checking referenced element: ${href}`);
+                    const refElements = referencedElement.querySelectorAll("*");
+                    refElements.forEach((element) => {
+                        extractFromElement(
+                            element,
+                            `referenced ${element.tagName}`,
+                        );
+                    });
+                    extractFromElement(referencedElement, "referenced root");
+                }
+            }
+        });
+    } catch (error) {
+        console.error("Error extracting colors:", error);
+    }
+
+    const colorArray = Array.from(colors).filter((color) => {
+        // Filter out common default/empty colors
+        return (
+            color &&
+            color !== "#000000" &&
+            color !== "#000" &&
+            color !== "black" &&
+            color !== "currentColor"
+        );
+    });
+
+    console.log(`Extracted ${colorArray.length} colors:`, colorArray);
+    return colorArray;
+}
+
+// Create a color swatch element with interactive color picker
+function createColorSwatch(color, index, sprite) {
+    const swatch = document.createElement("div");
+    swatch.className = "color-swatch";
+
+    // Color preview wrapper
+    const colorPickerWrapper = document.createElement("div");
+    colorPickerWrapper.className = "color-picker-wrapper";
+
+    // Color preview div
+    const colorPreview = document.createElement("div");
+    colorPreview.className = "color-preview";
+    colorPreview.style.backgroundColor = color;
+
+    // Hidden color input
+    const colorInput = document.createElement("input");
+    colorInput.type = "color";
+    colorInput.className = "color-picker-input";
+    colorInput.value = normalizeColor(color);
+
+    // Color info section
+    const colorInfo = document.createElement("div");
+    colorInfo.className = "color-info";
+
+    const colorValue = document.createElement("div");
+    colorValue.className = "color-value";
+    colorValue.textContent = color;
+
+    colorInfo.appendChild(colorValue);
+
+    // Add click handler to color preview
+    colorPreview.addEventListener("click", () => {
+        colorInput.click();
+    });
+
+    // Store the original color for this swatch
+    let currentColor = color;
+
+    // Add change handler to color input for real-time updates
+    colorInput.addEventListener("input", (e) => {
+        const newColor = e.target.value;
+        colorPreview.style.backgroundColor = newColor;
+        colorValue.textContent = newColor;
+
+        // Update the SVG in real-time using the current color as the old color
+        updateSpriteColor(sprite, currentColor, newColor);
+
+        // Update the current color to the new color for future changes
+        currentColor = newColor;
+    });
+
+    colorPickerWrapper.appendChild(colorPreview);
+    colorPickerWrapper.appendChild(colorInput);
+
+    swatch.appendChild(colorPickerWrapper);
+    swatch.appendChild(colorInfo);
+
+    return swatch;
+}
+
+// Normalize color to hex format for color input
+function normalizeColor(color) {
+    // If it's already a hex color, return it
+    if (color.startsWith("#")) {
+        return color;
+    }
+
+    // Handle RGB colors
+    if (color.startsWith("rgb")) {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = color;
+        return ctx.fillStyle;
+    }
+
+    // For named colors, create a temporary element to get computed color
+    const tempDiv = document.createElement("div");
+    tempDiv.style.color = color;
+    document.body.appendChild(tempDiv);
+    const computedColor = window.getComputedStyle(tempDiv).color;
+    document.body.removeChild(tempDiv);
+
+    // Convert RGB to hex
+    const rgbMatch = computedColor.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+    if (rgbMatch) {
+        const r = parseInt(rgbMatch[1]);
+        const g = parseInt(rgbMatch[2]);
+        const b = parseInt(rgbMatch[3]);
+        return (
+            "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)
+        );
+    }
+
+    return "#000000"; // fallback
+}
+
+// Update sprite color in real-time - now updates ALL sprites with the same color
+function updateSpriteColor(sprite, oldColor, newColor) {
+    if (!modifiedSvgContent) {
+        console.log("No SVG content available");
+        return;
+    }
+
+    console.log(
+        `Updating color across all sprites: ${oldColor} -> ${newColor} (triggered by ${sprite.id})`,
+    );
+
+    try {
+        // Parse the current SVG
+        const parser = new DOMParser();
+        const svgDoc = parser.parseFromString(
+            modifiedSvgContent,
+            "image/svg+xml",
+        );
+
+        // Check for parsing errors
+        const parserError = svgDoc.querySelector("parsererror");
+        if (parserError) {
+            console.error("SVG parsing error:", parserError.textContent);
+            return;
+        }
+
+        let updated = false;
+        let updateCount = 0;
+        let spritesUpdated = new Set();
+
+        // Function to update color in an element
+        function updateElementColor(element, parentSpriteId = null) {
+            // Update fill attribute
+            if (element.getAttribute("fill") === oldColor) {
+                element.setAttribute("fill", newColor);
+                updated = true;
+                updateCount++;
+                if (parentSpriteId) spritesUpdated.add(parentSpriteId);
+                console.log(
+                    `Updated fill attribute in ${
+                        parentSpriteId || "element"
+                    }: ${oldColor} -> ${newColor}`,
+                );
+            }
+
+            // Update stroke attribute
+            if (element.getAttribute("stroke") === oldColor) {
+                element.setAttribute("stroke", newColor);
+                updated = true;
+                updateCount++;
+                if (parentSpriteId) spritesUpdated.add(parentSpriteId);
+                console.log(
+                    `Updated stroke attribute in ${
+                        parentSpriteId || "element"
+                    }: ${oldColor} -> ${newColor}`,
+                );
+            }
+
+            // Update style attribute
+            const style = element.getAttribute("style");
+            if (style) {
+                let newStyle = style;
+                let styleUpdated = false;
+
+                // Update fill in style
+                const fillRegex = new RegExp(
+                    `fill\\s*:\\s*${oldColor.replace(
+                        /[.*+?^${}()|[\]\\]/g,
+                        "\\$&",
+                    )}`,
+                    "gi",
+                );
+                if (fillRegex.test(style)) {
+                    newStyle = newStyle.replace(fillRegex, `fill: ${newColor}`);
+                    styleUpdated = true;
+                    if (parentSpriteId) spritesUpdated.add(parentSpriteId);
+                    console.log(
+                        `Updated fill in style in ${
+                            parentSpriteId || "element"
+                        }: ${oldColor} -> ${newColor}`,
+                    );
+                }
+
+                // Update stroke in style
+                const strokeRegex = new RegExp(
+                    `stroke\\s*:\\s*${oldColor.replace(
+                        /[.*+?^${}()|[\]\\]/g,
+                        "\\$&",
+                    )}`,
+                    "gi",
+                );
+                if (strokeRegex.test(style)) {
+                    newStyle = newStyle.replace(
+                        strokeRegex,
+                        `stroke: ${newColor}`,
+                    );
+                    styleUpdated = true;
+                    if (parentSpriteId) spritesUpdated.add(parentSpriteId);
+                    console.log(
+                        `Updated stroke in style in ${
+                            parentSpriteId || "element"
+                        }: ${oldColor} -> ${newColor}`,
+                    );
+                }
+
+                if (styleUpdated) {
+                    element.setAttribute("style", newStyle);
+                    updated = true;
+                    updateCount++;
+                }
+            }
+        }
+
+        // Find ALL sprite elements in the SVG (not just the selected one)
+        const allSpriteElements = svgDoc.querySelectorAll('[id^="sprite"]');
+
+        console.log(
+            `Found ${allSpriteElements.length} sprite elements to check for color updates`,
+        );
+
+        // Update colors in all sprite elements
+        allSpriteElements.forEach((spriteElement) => {
+            const spriteId = spriteElement.id;
+
+            // Update colors in all elements within this sprite
+            const allElements = spriteElement.querySelectorAll("*");
+            allElements.forEach((element) =>
+                updateElementColor(element, spriteId),
+            );
+
+            // Also update the sprite element itself
+            updateElementColor(spriteElement, spriteId);
+
+            // Update colors in referenced elements (defs) for this sprite
+            const useElements = spriteElement.querySelectorAll("use");
+            useElements.forEach((useEl) => {
+                const href =
+                    useEl.getAttribute("xlink:href") ||
+                    useEl.getAttribute("href");
+                if (href) {
+                    const referencedElement = svgDoc.querySelector(href);
+                    if (referencedElement) {
+                        console.log(
+                            `Updating referenced element ${href} for sprite ${spriteId}`,
+                        );
+                        const refElements =
+                            referencedElement.querySelectorAll("*");
+                        refElements.forEach((element) =>
+                            updateElementColor(element, spriteId),
+                        );
+                        updateElementColor(referencedElement, spriteId);
+                    }
+                }
+            });
+        });
+
+        // Also check for any standalone elements outside of sprites that might have the color
+        const allElements = svgDoc.querySelectorAll("*");
+        allElements.forEach((element) => {
+            // Skip elements that are already inside sprites (to avoid double processing)
+            if (!element.closest('[id^="sprite"]')) {
+                updateElementColor(element, "standalone");
+            }
+        });
+
+        console.log(
+            `Total updates made: ${updateCount} across ${spritesUpdated.size} sprites`,
+        );
+        console.log(
+            `Sprites updated: ${Array.from(spritesUpdated).join(", ")}`,
+        );
+
+        if (updated) {
+            // Serialize the updated SVG
+            const serializer = new XMLSerializer();
+            modifiedSvgContent = serializer.serializeToString(svgDoc);
+
+            // Update the preview
+            displaySvg(modifiedSvgContent);
+            console.log("SVG preview updated successfully");
+        } else {
+            console.log(
+                `No instances of color ${oldColor} found in any sprites`,
+            );
+        }
+    } catch (error) {
+        console.error("Error updating sprite color:", error);
+    }
+}
+
+// Extract modified sprite data for server-side replacement
+function extractModifiedSprite(spriteId) {
+    if (!modifiedSvgContent) {
+        console.log("No modified SVG content available");
+        return null;
+    }
+
+    try {
+        // Parse the modified SVG
+        const parser = new DOMParser();
+        const svgDoc = parser.parseFromString(
+            modifiedSvgContent,
+            "image/svg+xml",
+        );
+
+        // Check for parsing errors
+        const parserError = svgDoc.querySelector("parsererror");
+        if (parserError) {
+            console.error("SVG parsing error:", parserError.textContent);
+            return null;
+        }
+
+        const spriteElement = svgDoc.getElementById(spriteId);
+        if (!spriteElement) {
+            console.log(`Sprite element ${spriteId} not found in modified SVG`);
+            return null;
+        }
+
+        // Extract all paths from the sprite
+        const paths = [];
+        const pathElements = spriteElement.querySelectorAll("path");
+
+        pathElements.forEach((path) => {
+            const pathData = {
+                d: path.getAttribute("d"),
+                fill: path.getAttribute("fill"),
+                stroke: path.getAttribute("stroke"),
+                style: path.getAttribute("style"),
+                // Include other relevant attributes
+                transform: path.getAttribute("transform"),
+                opacity: path.getAttribute("opacity"),
+                fillOpacity: path.getAttribute("fill-opacity"),
+                strokeOpacity: path.getAttribute("stroke-opacity"),
+                strokeWidth: path.getAttribute("stroke-width"),
+            };
+
+            // Only include attributes that exist
+            Object.keys(pathData).forEach((key) => {
+                if (pathData[key] === null || pathData[key] === undefined) {
+                    delete pathData[key];
+                }
+            });
+
+            paths.push(pathData);
+        });
+
+        // Also check for use elements and their referenced shapes
+        const useElements = spriteElement.querySelectorAll("use");
+        const referencedShapes = [];
+
+        useElements.forEach((useEl) => {
+            const href =
+                useEl.getAttribute("xlink:href") || useEl.getAttribute("href");
+            if (href) {
+                const referencedElement = svgDoc.querySelector(href);
+                if (referencedElement) {
+                    const refPaths = referencedElement.querySelectorAll("path");
+                    refPaths.forEach((path) => {
+                        const pathData = {
+                            d: path.getAttribute("d"),
+                            fill: path.getAttribute("fill"),
+                            stroke: path.getAttribute("stroke"),
+                            style: path.getAttribute("style"),
+                            transform: path.getAttribute("transform"),
+                            opacity: path.getAttribute("opacity"),
+                            fillOpacity: path.getAttribute("fill-opacity"),
+                            strokeOpacity: path.getAttribute("stroke-opacity"),
+                            strokeWidth: path.getAttribute("stroke-width"),
+                        };
+
+                        // Only include attributes that exist
+                        Object.keys(pathData).forEach((key) => {
+                            if (
+                                pathData[key] === null ||
+                                pathData[key] === undefined
+                            ) {
+                                delete pathData[key];
+                            }
+                        });
+
+                        referencedShapes.push({
+                            shapeId: href,
+                            pathData: pathData,
+                        });
+                    });
+                }
+            }
+        });
+
+        const modifiedSpriteData = {
+            spriteId: spriteId,
+            paths: paths,
+            referencedShapes: referencedShapes,
+            hasModifications: paths.length > 0 || referencedShapes.length > 0,
+        };
+
+        console.log(
+            `Extracted modified sprite data for ${spriteId}:`,
+            modifiedSpriteData,
+        );
+        return modifiedSpriteData;
+    } catch (error) {
+        console.error("Error extracting modified sprite:", error);
+        return null;
+    }
+}
+
+// Reapply color modifications to the newly loaded SVG
+async function reapplyColorModifications(spriteId, preservedModifications) {
+    if (
+        !modifiedSvgContent ||
+        !preservedModifications ||
+        !preservedModifications.hasModifications
+    ) {
+        return;
+    }
+
+    try {
+        console.log(`Reapplying modifications to sprite ${spriteId}`);
+
+        // Parse the current SVG
+        const parser = new DOMParser();
+        const svgDoc = parser.parseFromString(
+            modifiedSvgContent,
+            "image/svg+xml",
+        );
+
+        // Check for parsing errors
+        const parserError = svgDoc.querySelector("parsererror");
+        if (parserError) {
+            console.error("SVG parsing error:", parserError.textContent);
+            return;
+        }
+
+        const spriteElement = svgDoc.getElementById(spriteId);
+        if (!spriteElement) {
+            console.log(`Sprite element ${spriteId} not found in reloaded SVG`);
+            return;
+        }
+
+        let updated = false;
+
+        // Apply the preserved path modifications
+        const pathElements = spriteElement.querySelectorAll("path");
+
+        // Match paths by their 'd' attribute and apply modifications
+        preservedModifications.paths.forEach((modifiedPath, index) => {
+            if (index < pathElements.length) {
+                const pathElement = pathElements[index];
+
+                // Apply all the modified attributes
+                Object.keys(modifiedPath).forEach((attr) => {
+                    if (
+                        modifiedPath[attr] !== null &&
+                        modifiedPath[attr] !== undefined
+                    ) {
+                        pathElement.setAttribute(attr, modifiedPath[attr]);
+                        updated = true;
+                    }
+                });
+            }
+        });
+
+        // Handle referenced shapes if any
+        if (
+            preservedModifications.referencedShapes &&
+            preservedModifications.referencedShapes.length > 0
+        ) {
+            preservedModifications.referencedShapes.forEach((refShape) => {
+                const referencedElement = svgDoc.querySelector(
+                    refShape.shapeId,
+                );
+                if (referencedElement) {
+                    const refPaths = referencedElement.querySelectorAll("path");
+                    if (refPaths.length > 0) {
+                        const pathElement = refPaths[0]; // Assuming single path for simplicity
+
+                        Object.keys(refShape.pathData).forEach((attr) => {
+                            if (
+                                refShape.pathData[attr] !== null &&
+                                refShape.pathData[attr] !== undefined
+                            ) {
+                                pathElement.setAttribute(
+                                    attr,
+                                    refShape.pathData[attr],
+                                );
+                                updated = true;
+                            }
+                        });
+                    }
+                }
+            });
+        }
+
+        if (updated) {
+            // Serialize the updated SVG
+            const serializer = new XMLSerializer();
+            modifiedSvgContent = serializer.serializeToString(svgDoc);
+
+            // Update the preview
+            displaySvg(modifiedSvgContent);
+            console.log("Color modifications reapplied successfully");
+
+            // Refresh the color picker if it's visible
+            const colorPickerSection =
+                document.getElementById("colorPickerSection");
+            if (colorPickerSection.style.display !== "none") {
+                // Find the sprite object and refresh the color picker
+                const spritesList = document.getElementById("spritesList");
+                const selectedItem = spritesList.querySelector(
+                    ".sprite-item.selected",
+                );
+                if (selectedItem) {
+                    // Trigger a refresh of the color picker
+                    setTimeout(() => {
+                        const sprite = { id: spriteId, name: spriteId };
+                        showColorPicker(sprite);
+                    }, 100);
+                }
+            }
+        }
+    } catch (error) {
+        console.error("Error reapplying color modifications:", error);
     }
 }
 
@@ -672,10 +1413,16 @@ async function applyToAllFiles() {
 
     // Get the optional sprite ID
     const spriteId = document.getElementById("spriteId").value.trim();
+    const animationFolder = document.getElementById("animationFolder").value;
+
+    if (!animationFolder) {
+        updateStatus("Please select an animation folder first", "warning");
+        return;
+    }
 
     if (
         !confirm(
-            "Are you sure you want to apply this sprite to ALL SVG files? This will modify all files in the ready folder.",
+            `Are you sure you want to apply this sprite to ALL SVG files in '${animationFolder}'? This will modify all files in the folder.`,
         )
     ) {
         return;
@@ -684,16 +1431,28 @@ async function applyToAllFiles() {
     updateStatus("Applying sprite to all files...");
 
     try {
+        let requestBody = {
+            replacementFile,
+            spriteId: spriteId || undefined,
+            animationFolder,
+        };
+
+        // If we have a modified SVG with color changes, extract the modified sprite
+        if (modifiedSvgContent && spriteId) {
+            const modifiedSpriteData = extractModifiedSprite(spriteId);
+            if (modifiedSpriteData) {
+                requestBody.modifiedSpriteData = modifiedSpriteData;
+                console.log("Using color-modified sprite data for replacement");
+            }
+        }
+
         // Call the server-side API to apply to all files
         const response = await fetch("/api/apply-to-all", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
             },
-            body: JSON.stringify({
-                replacementFile,
-                spriteId: spriteId || undefined, // Only send if not empty
-            }),
+            body: JSON.stringify(requestBody),
         });
 
         const result = await response.json();
@@ -702,9 +1461,33 @@ async function applyToAllFiles() {
             throw new Error(result.error || "Failed to apply to all files");
         }
 
-        // Reload the current SVG to show the changes
+        // Reload the current SVG to show the changes, but preserve any color modifications
         if (currentSvgFile) {
+            // Store the current modified sprite data before reloading
+            const currentSpriteId = document
+                .getElementById("spriteId")
+                .value.trim();
+            let preservedModifications = null;
+
+            if (modifiedSvgContent && currentSpriteId) {
+                preservedModifications = extractModifiedSprite(currentSpriteId);
+            }
+
             await loadSelectedSvg();
+
+            // If we had modifications, reapply them to the newly loaded SVG
+            if (
+                preservedModifications &&
+                preservedModifications.hasModifications
+            ) {
+                console.log(
+                    "Reapplying color modifications after sprite replacement",
+                );
+                await reapplyColorModifications(
+                    currentSpriteId,
+                    preservedModifications,
+                );
+            }
         }
 
         updateStatus(

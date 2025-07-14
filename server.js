@@ -149,45 +149,99 @@ app.get("/api/replacement-files", (req, res) => {
 // API endpoint to restore all SVG files from backups
 app.post("/api/restore-all-svg", (req, res) => {
     try {
-        const readyFolderPath = path.join(
+        const { animationFolder } = req.body;
+
+        if (!animationFolder) {
+            return res
+                .status(400)
+                .json({ error: "Missing animationFolder parameter" });
+        }
+
+        const animationFolderPath = path.join(
             __dirname,
-            "animation-body-full/rogue/ready",
+            "animation-body-full/rogue",
+            animationFolder,
         );
-        const backupsFolderPath = path.join(readyFolderPath, "backups");
+        const backupsFolderPath = path.join(
+            __dirname,
+            "backups",
+            animationFolder,
+        );
 
         // Check if backups folder exists
         if (!fs.existsSync(backupsFolderPath)) {
-            return res.status(404).json({ error: "Backups folder not found" });
+            return res.status(404).json({
+                error: `Backups folder not found for ${animationFolder}`,
+            });
         }
 
-        // Get all backup files
-        const backupFiles = fs
-            .readdirSync(backupsFolderPath)
-            .filter((file) => file.endsWith(".svg"));
-
-        if (backupFiles.length === 0) {
-            return res.status(404).json({ error: "No backup files found" });
+        // Check if animation folder exists
+        if (!fs.existsSync(animationFolderPath)) {
+            return res.status(404).json({
+                error: `Animation folder '${animationFolder}' not found`,
+            });
         }
 
         const results = [];
 
-        // Restore each file
-        backupFiles.forEach((fileName) => {
-            const originalFilePath = path.join(readyFolderPath, fileName);
-            const backupFilePath = path.join(backupsFolderPath, fileName);
+        // Function to recursively restore files
+        function restoreFilesRecursively(
+            backupDir,
+            targetDir,
+            relativePath = "",
+        ) {
+            const items = fs.readdirSync(backupDir);
 
-            try {
-                fs.copyFileSync(backupFilePath, originalFilePath);
-                results.push({ fileName, status: "restored" });
-            } catch (err) {
-                console.error(`Error restoring ${fileName}:`, err);
-                results.push({
-                    fileName,
-                    status: "error",
-                    message: err.message,
-                });
-            }
-        });
+            items.forEach((item) => {
+                const backupItemPath = path.join(backupDir, item);
+                const targetItemPath = path.join(targetDir, item);
+                const currentRelativePath = relativePath
+                    ? `${relativePath}/${item}`
+                    : item;
+
+                const stat = fs.statSync(backupItemPath);
+
+                if (stat.isFile() && item.endsWith(".svg")) {
+                    try {
+                        // Ensure target directory exists
+                        const targetDirPath = path.dirname(targetItemPath);
+                        if (!fs.existsSync(targetDirPath)) {
+                            fs.mkdirSync(targetDirPath, { recursive: true });
+                        }
+
+                        fs.copyFileSync(backupItemPath, targetItemPath);
+                        results.push({
+                            fileName: currentRelativePath,
+                            status: "restored",
+                        });
+                    } catch (err) {
+                        console.error(
+                            `Error restoring ${currentRelativePath}:`,
+                            err,
+                        );
+                        results.push({
+                            fileName: currentRelativePath,
+                            status: "error",
+                            message: err.message,
+                        });
+                    }
+                } else if (stat.isDirectory()) {
+                    // Recursively restore subdirectory
+                    restoreFilesRecursively(
+                        backupItemPath,
+                        targetItemPath,
+                        currentRelativePath,
+                    );
+                }
+            });
+        }
+
+        // Start recursive restoration
+        restoreFilesRecursively(backupsFolderPath, animationFolderPath);
+
+        if (results.length === 0) {
+            return res.status(404).json({ error: "No backup files found" });
+        }
 
         const successCount = results.filter(
             (r) => r.status === "restored",
@@ -196,7 +250,7 @@ app.post("/api/restore-all-svg", (req, res) => {
 
         res.json({
             success: true,
-            message: `Restored ${successCount} files, ${errorCount} errors`,
+            message: `Restored ${successCount} files from ${animationFolder}, ${errorCount} errors`,
             results,
         });
     } catch (error) {
@@ -237,11 +291,8 @@ app.post("/api/replace-sprite", async (req, res) => {
         }
 
         // Create a backup if it doesn't exist
-        const backupPath = path.join(
-            __dirname,
-            "animation-body-full/rogue/ready/backups",
-            fileName,
-        );
+        // Use standalone backup folder structure: backups/ready/
+        const backupPath = path.join(__dirname, "backups/ready", fileName);
 
         // Ensure the backups directory exists
         const backupDir = path.dirname(backupPath);
@@ -472,7 +523,8 @@ app.post("/api/remove-hat", async (req, res) => {
         }
 
         // Create a backup if it doesn't exist
-        const backupDir = path.join(folderPath, "backups");
+        // Use standalone backup folder structure: backups/<animation-folder-name>/
+        const backupDir = path.join(__dirname, "backups", animationFolder);
         if (!fs.existsSync(backupDir)) {
             fs.mkdirSync(backupDir, { recursive: true });
         }
@@ -600,7 +652,8 @@ app.post("/api/toggle-accessories", async (req, res) => {
         }
 
         // Create a backup if it doesn't exist
-        const backupDir = path.join(folderPath, "backups");
+        // Use standalone backup folder structure: backups/<animation-folder-name>/
+        const backupDir = path.join(__dirname, "backups", animationFolder);
         if (!fs.existsSync(backupDir)) {
             fs.mkdirSync(backupDir, { recursive: true });
         }
@@ -748,7 +801,12 @@ app.post("/api/remove-hat-all", async (req, res) => {
                 const filePath = path.join(folderPath, fileName);
 
                 // Create a backup if it doesn't exist
-                const backupDir = path.join(folderPath, "backups");
+                // Use standalone backup folder structure: backups/<animation-folder-name>/
+                const backupDir = path.join(
+                    __dirname,
+                    "backups",
+                    animationFolder,
+                );
                 if (!fs.existsSync(backupDir)) {
                     fs.mkdirSync(backupDir, { recursive: true });
                 }
@@ -874,12 +932,17 @@ app.post("/api/remove-hat-all", async (req, res) => {
 // Updated apply-to-all endpoint to support animation folders and nested structure
 app.post("/api/apply-to-all", async (req, res) => {
     try {
-        const { replacementFile, spriteId, animationFolder } = req.body;
+        const {
+            replacementFile,
+            spriteId,
+            animationFolder,
+            modifiedSpriteData,
+        } = req.body;
 
-        if (!replacementFile) {
-            return res
-                .status(400)
-                .json({ error: "Missing replacementFile parameter" });
+        if (!replacementFile && !modifiedSpriteData) {
+            return res.status(400).json({
+                error: "Missing replacementFile or modifiedSpriteData parameter",
+            });
         }
 
         if (!animationFolder) {
@@ -895,13 +958,17 @@ app.post("/api/apply-to-all", async (req, res) => {
             animationFolder,
         );
 
-        const replacementSvgPath = path.join(__dirname, replacementFile);
+        // Only check replacement file if we're not using modified sprite data
+        let replacementSvgPath = null;
+        if (!modifiedSpriteData || !modifiedSpriteData.hasModifications) {
+            replacementSvgPath = path.join(__dirname, replacementFile);
 
-        // Check if replacement file exists
-        if (!fs.existsSync(replacementSvgPath)) {
-            return res
-                .status(404)
-                .json({ error: "Replacement SVG file not found" });
+            // Check if replacement file exists
+            if (!fs.existsSync(replacementSvgPath)) {
+                return res
+                    .status(404)
+                    .json({ error: "Replacement SVG file not found" });
+            }
         }
 
         // Check if animation folder exists
@@ -951,25 +1018,63 @@ app.post("/api/apply-to-all", async (req, res) => {
             });
         }
 
-        // Read the replacement SVG file
-        const replacementSvgContent = fs.readFileSync(
-            replacementSvgPath,
-            "utf8",
-        );
-
-        // Parse the replacement SVG
+        let replacementPaths = [];
         const parser = new (require("xmldom").DOMParser)();
-        const replacementDoc = parser.parseFromString(
-            replacementSvgContent,
-            "text/xml",
-        );
 
-        // Get replacement paths
-        const replacementPaths = replacementDoc.getElementsByTagName("path");
+        // Handle modified sprite data or original replacement file
+        if (modifiedSpriteData && modifiedSpriteData.hasModifications) {
+            console.log("Using modified sprite data for replacement");
+
+            // Create path elements from the modified sprite data
+            const xmlDoc = parser.parseFromString("<svg></svg>", "text/xml");
+
+            modifiedSpriteData.paths.forEach((pathData) => {
+                const pathElement = xmlDoc.createElement("path");
+
+                // Set all the attributes from the modified data
+                Object.keys(pathData).forEach((attr) => {
+                    if (
+                        pathData[attr] !== null &&
+                        pathData[attr] !== undefined
+                    ) {
+                        pathElement.setAttribute(attr, pathData[attr]);
+                    }
+                });
+
+                replacementPaths.push(pathElement);
+            });
+
+            console.log(
+                `Created ${replacementPaths.length} paths from modified sprite data`,
+            );
+        } else {
+            // Read the replacement SVG file
+            const replacementSvgContent = fs.readFileSync(
+                replacementSvgPath,
+                "utf8",
+            );
+
+            // Parse the replacement SVG
+            const replacementDoc = parser.parseFromString(
+                replacementSvgContent,
+                "text/xml",
+            );
+
+            // Get replacement paths
+            const pathElements = replacementDoc.getElementsByTagName("path");
+            for (let i = 0; i < pathElements.length; i++) {
+                replacementPaths.push(pathElements[i]);
+            }
+
+            console.log(
+                `Using ${replacementPaths.length} paths from replacement file`,
+            );
+        }
+
         if (replacementPaths.length === 0) {
             return res
                 .status(400)
-                .json({ error: "No paths found in replacement SVG" });
+                .json({ error: "No paths found in replacement data" });
         }
 
         const results = [];
@@ -980,10 +1085,11 @@ app.post("/api/apply-to-all", async (req, res) => {
                 const { relativePath, fullPath } = fileInfo;
 
                 // Create a backup if it doesn't exist
-                // For nested files, create the backup in the same structure
+                // Use standalone backup folder structure: backups/<animation-folder-name>/
                 const backupBasePath = path.join(
-                    animationFolderPath,
+                    __dirname,
                     "backups",
+                    animationFolder,
                 );
                 const backupPath = path.join(backupBasePath, relativePath);
 
