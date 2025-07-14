@@ -4,55 +4,103 @@
         <meta charset="UTF-8" />
         <meta
             name="viewport"
-            content="width=device-width, initial-scale=1.0" />
-        <title>SVG Modifier</title>
+            content="width=device-width, initial-scale=1.0"
+        />
+        <title>SVG Animation Studio</title>
         <link
             rel="stylesheet"
-            href="styles.css" />
+            href="styles.css"
+        />
     </head>
     <body>
-        <div class="container">
-            <h1>SVG Modifier</h1>
-            <div class="preview-container">
-                <h2>Preview</h2>
-                <div
-                    id="svgPreview"
-                    class="svg-preview"></div>
-            </div>
-            <div class="controls">
-                <div class="file-selector">
-                    <h2>Select SVG File</h2>
-                    <div class="character-selector">
-                        <label>Character Type:</label>
-                        <div class="character-type-buttons">
+        <div class="app-container">
+            <header class="app-header">
+                <h1>SVG Animation Studio</h1>
+            </header>
+
+            <main class="app-main">
+                <!-- Canvas Section (Left) -->
+                <section class="canvas-section">
+                    <div class="canvas-header">
+                        <h2>Canvas</h2>
+                        <div class="canvas-controls">
                             <button
-                                id="selectMale"
-                                class="character-button active">
-                                Male
+                                id="startAnimation"
+                                class="btn btn-success"
+                            >
+                                <span class="btn-icon">▶</span> Play
                             </button>
                             <button
-                                id="selectFemale"
-                                class="character-button">
-                                Female
+                                id="stopAnimation"
+                                class="btn btn-danger"
+                            >
+                                <span class="btn-icon">⏸</span> Stop
                             </button>
                         </div>
                     </div>
-                    <select id="svgFileSelector">
-                        <option value="">Select a file...</option>
-                        <!-- Files will be populated by JavaScript -->
-                    </select>
-                </div>
+                    <div
+                        id="svgPreview"
+                        class="svg-canvas"
+                    ></div>
+                </section>
 
-                <div class="modification-controls">
-                    <h2>Modify Elements</h2>
-                    <div class="button-group">
-                        <div class="sprite-replacement-form">
-                            <h3>Sprite Replacement</h3>
+                <!-- Inspector Section (Right) -->
+                <section class="inspector-section">
+                    <div class="inspector-header">
+                        <h2>Inspector</h2>
+                    </div>
+
+                    <div class="inspector-content">
+                        <!-- Animation Selection -->
+                        <div class="inspector-panel">
+                            <h3>Animation</h3>
+                            <div class="form-group">
+                                <label for="animationFolder"
+                                    >Animation Type:</label
+                                >
+                                <select id="animationFolder">
+                                    <option value="">
+                                        Select animation...
+                                    </option>
+                                    <!-- Animation folders will be populated by JavaScript -->
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="svgFileSelector">Frame:</label>
+                                <select id="svgFileSelector">
+                                    <option value="">Select a frame...</option>
+                                    <!-- Files will be populated by JavaScript -->
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Animation Settings -->
+                        <div class="inspector-panel">
+                            <h3>Animation Settings</h3>
+                            <div class="form-group">
+                                <label for="animationSpeed">Speed (ms):</label>
+                                <input
+                                    type="number"
+                                    id="animationSpeed"
+                                    value="30"
+                                    min="10"
+                                    max="1000"
+                                    class="form-control"
+                                />
+                            </div>
+                        </div>
+
+                        <!-- Sprite Modification -->
+                        <div class="inspector-panel">
+                            <h3>Sprite Modification</h3>
                             <div class="form-group">
                                 <label for="spriteReplacementFile"
-                                    >Replacement Sprite File:</label
+                                    >Replacement File:</label
                                 >
-                                <select id="spriteReplacementFile">
+                                <select
+                                    id="spriteReplacementFile"
+                                    class="form-control"
+                                >
                                     <option value="">
                                         Select a replacement file...
                                     </option>
@@ -65,80 +113,74 @@
                                     <input
                                         type="text"
                                         id="spriteId"
-                                        placeholder="Select from list or enter manually" />
+                                        placeholder="Select from list or enter manually"
+                                        class="form-control"
+                                    />
                                     <button
                                         id="analyzeSprites"
-                                        class="small-button">
-                                        Show All Sprites
+                                        class="btn btn-secondary btn-sm"
+                                        data-state="hidden"
+                                    >
+                                        Show All
                                     </button>
                                 </div>
                             </div>
                             <div
                                 id="spritesList"
-                                class="sprites-list"></div>
-                            <div class="button-row">
+                                class="sprites-list"
+                            ></div>
+
+                            <!-- Color Picker Interface -->
+                            <div
+                                id="colorPickerSection"
+                                class="color-picker-section"
+                                style="display: none"
+                            >
+                                <div class="color-picker-header">
+                                    <h4 id="selectedSpriteName">
+                                        Selected Sprite
+                                    </h4>
+                                    <span
+                                        id="selectedSpriteType"
+                                        class="sprite-type-badge"
+                                    ></span>
+                                </div>
+                                <div
+                                    id="colorSwatches"
+                                    class="color-swatches"
+                                >
+                                    <!-- Color swatches will be populated by JavaScript -->
+                                </div>
+                            </div>
+                            <div class="form-actions">
                                 <button
                                     id="replaceSprite"
-                                    class="action-button primary">
+                                    class="btn btn-primary"
+                                >
                                     Replace Sprite in All Files
                                 </button>
                             </div>
                         </div>
 
-                        <div class="special-actions">
-                            <h3>Special Actions</h3>
-                            <div class="button-row">
+                        <!-- Actions -->
+                        <div class="inspector-panel">
+                            <h3>Actions</h3>
+                            <div class="form-actions">
                                 <button
-                                    id="removeHat"
-                                    class="action-button warning">
-                                    Remove Hat
-                                </button>
-                                <button
-                                    id="toggleAccessories"
-                                    class="action-button warning">
-                                    Toggle Accessories
-                                </button>
-                            </div>
-                        </div>
-
-                        <div class="animation-controls">
-                            <h3>Animation Controls</h3>
-                            <div class="form-group">
-                                <label for="animationSpeed"
-                                    >Animation Speed (ms):</label
+                                    id="restoreAllSvg"
+                                    class="btn btn-danger"
                                 >
-                                <input
-                                    type="number"
-                                    id="animationSpeed"
-                                    value="30"
-                                    min="10"
-                                    max="1000" />
-                            </div>
-                            <div class="button-row">
-                                <button
-                                    id="startAnimation"
-                                    class="action-button success">
-                                    Start Animation
-                                </button>
-                                <button
-                                    id="stopAnimation"
-                                    class="action-button danger">
-                                    Stop Animation
+                                    Restore All SVG Files
                                 </button>
                             </div>
                         </div>
-                        <button
-                            id="restoreAllSvg"
-                            class="action-button danger">
-                            Restore All SVG Files
-                        </button>
                     </div>
-                </div>
-            </div>
+                </section>
+            </main>
 
-            <div class="status-bar">
+            <footer class="status-bar">
                 <span id="statusMessage">Ready</span>
-            </div>
+            </footer>
         </div>
 
         <script src="script.js"></script>
