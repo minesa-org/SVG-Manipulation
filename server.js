@@ -1019,30 +1019,56 @@ app.post("/api/apply-to-all", async (req, res) => {
         }
 
         let replacementPaths = [];
+        let referencedShapesData = [];
         const parser = new (require("xmldom").DOMParser)();
 
         // Handle modified sprite data or original replacement file
         if (modifiedSpriteData && modifiedSpriteData.hasModifications) {
             console.log("Using modified sprite data for replacement");
 
-            // Create path elements from the modified sprite data
+            // Create path elements from the modified data
             const xmlDoc = parser.parseFromString("<svg></svg>", "text/xml");
 
-            modifiedSpriteData.paths.forEach((pathData) => {
-                const pathElement = xmlDoc.createElement("path");
+            if (Array.isArray(modifiedSpriteData.paths)) {
+                modifiedSpriteData.paths.forEach((pathData) => {
+                    const pathElement = xmlDoc.createElement("path");
 
-                // Set all the attributes from the modified data
-                Object.keys(pathData).forEach((attr) => {
-                    if (
-                        pathData[attr] !== null &&
-                        pathData[attr] !== undefined
-                    ) {
-                        pathElement.setAttribute(attr, pathData[attr]);
-                    }
+                    // Set all the attributes from the modified data
+                    Object.keys(pathData).forEach((attr) => {
+                        if (
+                            pathData[attr] !== null &&
+                            pathData[attr] !== undefined
+                        ) {
+                            pathElement.setAttribute(attr, pathData[attr]);
+                        }
+                    });
+
+                    replacementPaths.push(pathElement);
                 });
+            }
 
-                replacementPaths.push(pathElement);
-            });
+            if (
+                Array.isArray(modifiedSpriteData.referencedShapes) &&
+                modifiedSpriteData.referencedShapes.length > 0
+            ) {
+                referencedShapesData = modifiedSpriteData.referencedShapes;
+
+                // If we don't have direct paths, use the first referenced shape's paths
+                if (replacementPaths.length === 0) {
+                    referencedShapesData.forEach((ref) => {
+                        const pathElement = xmlDoc.createElement("path");
+                        Object.keys(ref.pathData).forEach((attr) => {
+                            if (
+                                ref.pathData[attr] !== null &&
+                                ref.pathData[attr] !== undefined
+                            ) {
+                                pathElement.setAttribute(attr, ref.pathData[attr]);
+                            }
+                        });
+                        replacementPaths.push(pathElement);
+                    });
+                }
+            }
 
             console.log(
                 `Created ${replacementPaths.length} paths from modified sprite data`,
@@ -1071,7 +1097,10 @@ app.post("/api/apply-to-all", async (req, res) => {
             );
         }
 
-        if (replacementPaths.length === 0) {
+        if (
+            replacementPaths.length === 0 &&
+            (!referencedShapesData || referencedShapesData.length === 0)
+        ) {
             return res
                 .status(400)
                 .json({ error: "No paths found in replacement data" });
@@ -1197,12 +1226,14 @@ app.post("/api/apply-to-all", async (req, res) => {
                     }
 
                     const useElement = useElements[0];
-                    const shapeHref = useElement.getAttribute("xlink:href");
+                    const shapeHref =
+                        useElement.getAttribute("xlink:href") ||
+                        useElement.getAttribute("href");
                     if (!shapeHref) {
                         return;
                     }
 
-                    const shapeId = shapeHref.substring(1);
+                    const shapeId = shapeHref.replace("#", "");
                     const shapeElement = svgDoc.getElementById(shapeId);
 
                     if (!shapeElement) {
@@ -1224,11 +1255,35 @@ app.post("/api/apply-to-all", async (req, res) => {
                         }
                     });
 
-                    // Add new paths from the replacement SVG
-                    for (let i = 0; i < replacementPaths.length; i++) {
-                        const pathNode = replacementPaths[i].cloneNode(true);
-                        shapeElement.appendChild(pathNode);
+                    // Determine which paths to use for this shape
+                    const refShape = referencedShapesData.find(
+                        (r) =>
+                            r.shapeId === shapeHref ||
+                            r.shapeId === `#${shapeId}` ||
+                            r.shapeId === shapeId,
+                    );
+
+                    const pathsToAdd = [];
+                    if (refShape) {
+                        const p = svgDoc.createElement("path");
+                        Object.keys(refShape.pathData).forEach((attr) => {
+                            if (
+                                refShape.pathData[attr] !== null &&
+                                refShape.pathData[attr] !== undefined
+                            ) {
+                                p.setAttribute(attr, refShape.pathData[attr]);
+                            }
+                        });
+                        pathsToAdd.push(p);
+                    } else {
+                        for (let i = 0; i < replacementPaths.length; i++) {
+                            pathsToAdd.push(replacementPaths[i].cloneNode(true));
+                        }
                     }
+
+                    pathsToAdd.forEach((pathNode) => {
+                        shapeElement.appendChild(pathNode);
+                    });
                 }
 
                 if (updated) {
