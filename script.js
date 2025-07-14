@@ -7,17 +7,18 @@ let currentSvgFile = null;
 let animationInterval = null;
 let svgFiles = [];
 let currentFileIndex = 0;
-
-// Character type (male/female)
-let characterType = "male";
+let currentAnimationFolder = "ready"; // Default animation folder
 
 // Initialize the application
 document.addEventListener("DOMContentLoaded", () => {
-    // Fetch and populate the file selectors
-    fetchSvgFiles();
+    // Fetch and populate the selectors
+    fetchAnimationFolders();
     fetchReplacementFiles();
 
     // Add event listeners for file and sprite operations
+    document
+        .getElementById("animationFolder")
+        .addEventListener("change", onAnimationFolderChange);
     document
         .getElementById("svgFileSelector")
         .addEventListener("change", loadSelectedSvg);
@@ -27,21 +28,6 @@ document.addEventListener("DOMContentLoaded", () => {
     document
         .getElementById("analyzeSprites")
         .addEventListener("click", analyzeSprites);
-    // Apply to All Files button removed - now automatic
-
-    // Add event listeners for character type selection
-    document
-        .getElementById("selectMale")
-        .addEventListener("click", () => setCharacterType("male"));
-    document
-        .getElementById("selectFemale")
-        .addEventListener("click", () => setCharacterType("female"));
-
-    // Add event listeners for special actions
-    document.getElementById("removeHat").addEventListener("click", removeHat);
-    document
-        .getElementById("toggleAccessories")
-        .addEventListener("click", toggleAccessories);
 
     // Add event listeners for animation controls
     document
@@ -55,11 +41,76 @@ document.addEventListener("DOMContentLoaded", () => {
         .addEventListener("click", restoreAllSvgFiles);
 });
 
-// Fetch SVG files from the server
-async function fetchSvgFiles() {
+// Fetch animation folders from the server
+async function fetchAnimationFolders() {
     try {
-        // Include character type in the request
-        const response = await fetch(`/api/svg-files?type=${characterType}`);
+        const response = await fetch("/api/animation-folders");
+        if (!response.ok) {
+            throw new Error(
+                `Failed to fetch animation folders: ${response.statusText}`,
+            );
+        }
+
+        const folders = await response.json();
+        populateAnimationFolderSelector(folders);
+
+        // Load files for the default folder
+        if (folders.length > 0) {
+            currentAnimationFolder = folders.includes("ready")
+                ? "ready"
+                : folders[0];
+            document.getElementById("animationFolder").value =
+                currentAnimationFolder;
+            fetchSvgFiles();
+        }
+    } catch (error) {
+        console.error("Error fetching animation folders:", error);
+        updateStatus(
+            `Error fetching animation folders: ${error.message}`,
+            "error",
+        );
+    }
+}
+
+// Populate the animation folder selector
+function populateAnimationFolderSelector(folders) {
+    const selector = document.getElementById("animationFolder");
+    selector.innerHTML = '<option value="">Select animation...</option>';
+
+    folders.forEach((folder) => {
+        const option = document.createElement("option");
+        option.value = folder;
+        option.textContent = folder.charAt(0).toUpperCase() + folder.slice(1);
+        selector.appendChild(option);
+    });
+}
+
+// Handle animation folder change
+async function onAnimationFolderChange() {
+    const selector = document.getElementById("animationFolder");
+    currentAnimationFolder = selector.value;
+
+    if (currentAnimationFolder) {
+        await fetchSvgFiles();
+    } else {
+        // Clear the file selector
+        document.getElementById("svgFileSelector").innerHTML =
+            '<option value="">Select a frame...</option>';
+        svgFiles = [];
+    }
+}
+
+// Fetch SVG files from the server for the current animation folder
+async function fetchSvgFiles() {
+    if (!currentAnimationFolder) {
+        updateStatus("Please select an animation folder first", "warning");
+        return;
+    }
+
+    try {
+        const response = await fetch(
+            `/api/svg-files?folder=${currentAnimationFolder}`,
+        );
         if (!response.ok) {
             throw new Error(`Failed to fetch files: ${response.statusText}`);
         }
@@ -84,6 +135,10 @@ async function fetchSvgFiles() {
 
         svgFiles = files; // Store in global variable for animation
         populateFileSelector(svgFiles);
+        updateStatus(
+            `Loaded ${files.length} frames from ${currentAnimationFolder}`,
+            "success",
+        );
     } catch (error) {
         console.error("Error fetching SVG files:", error);
         updateStatus(`Error fetching files: ${error.message}`, "error");
@@ -122,7 +177,7 @@ async function fetchReplacementFiles() {
         console.error("Error fetching replacement files:", error);
         updateStatus(
             `Error fetching replacement files: ${error.message}`,
-            "error"
+            "error",
         );
     }
 }
@@ -219,13 +274,22 @@ async function loadSelectedSvg() {
         return;
     }
 
+    if (!currentAnimationFolder) {
+        updateStatus("Please select an animation folder first", "warning");
+        return;
+    }
+
     currentSvgFile = selectedFile;
     updateStatus(`Loading ${selectedFile}...`);
 
     try {
-        const response = await fetch(
-            `animation-body-full/rogue/ready/${selectedFile}`
-        );
+        // Construct the path based on the current animation folder
+        // Handle nested paths (e.g., "start/559.svg" becomes "animation-body-full/rogue/run/start/559.svg")
+        const filePath = selectedFile.includes("/")
+            ? `animation-body-full/rogue/${currentAnimationFolder}/${selectedFile}`
+            : `animation-body-full/rogue/${currentAnimationFolder}/${selectedFile}`;
+
+        const response = await fetch(filePath);
         if (!response.ok) {
             throw new Error(`Failed to load file: ${response.statusText}`);
         }
@@ -235,7 +299,10 @@ async function loadSelectedSvg() {
         modifiedSvgContent = svgContent;
 
         displaySvg(svgContent);
-        updateStatus(`Loaded ${selectedFile} successfully`, "success");
+        updateStatus(
+            `Loaded ${selectedFile} from ${currentAnimationFolder}`,
+            "success",
+        );
     } catch (error) {
         console.error("Error loading SVG:", error);
         updateStatus(`Error loading file: ${error.message}`, "error");
@@ -255,7 +322,7 @@ function displaySvg(svgContent) {
 // Replace any sprite in all SVG files while preserving the transform
 async function replaceSprite() {
     const replacementFile = document.getElementById(
-        "spriteReplacementFile"
+        "spriteReplacementFile",
     ).value;
     if (!replacementFile) {
         updateStatus("Please select a replacement file", "warning");
@@ -277,7 +344,7 @@ async function replaceSprite() {
             body: JSON.stringify({
                 replacementFile,
                 spriteId: spriteId || undefined, // Only send if not empty
-                characterType: characterType,
+                animationFolder: currentAnimationFolder,
             }),
         });
 
@@ -294,7 +361,7 @@ async function replaceSprite() {
 
         updateStatus(
             result.message || "Sprite replaced successfully in all files",
-            "success"
+            "success",
         );
     } catch (error) {
         console.error("Error replacing sprite:", error);
@@ -310,7 +377,7 @@ async function replaceSprite() {
 async function restoreAllSvgFiles() {
     if (
         !confirm(
-            "Are you sure you want to restore ALL SVG files to their original state? This cannot be undone."
+            "Are you sure you want to restore ALL SVG files to their original state? This cannot be undone.",
         )
     ) {
         return;
@@ -336,15 +403,15 @@ async function restoreAllSvgFiles() {
 
         // Display results
         const successCount = result.results.filter(
-            (r) => r.status === "restored"
+            (r) => r.status === "restored",
         ).length;
         const errorCount = result.results.filter(
-            (r) => r.status === "error"
+            (r) => r.status === "error",
         ).length;
 
         updateStatus(
             `Restored ${successCount} files, ${errorCount} errors`,
-            "success"
+            "success",
         );
 
         // Refresh the current SVG if it's loaded
@@ -391,7 +458,7 @@ function analyzeSprites() {
         const parser = new DOMParser();
         const svgDoc = parser.parseFromString(
             modifiedSvgContent,
-            "image/svg+xml"
+            "image/svg+xml",
         );
 
         // Find all elements with IDs
@@ -425,7 +492,7 @@ function analyzeSprites() {
             if (id && id.startsWith("sprite")) {
                 // Get character name if available directly or via our map
                 const directCharName = element.getAttribute(
-                    "ffdec:characterName"
+                    "ffdec:characterName",
                 );
                 const mappedCharName = characterMap.get(id);
                 const characterName = directCharName || mappedCharName || "";
@@ -581,7 +648,7 @@ function analyzeSprites() {
         spritesList.style.display = "block";
 
         console.log(
-            `Found ${sprites.length} sprites, list should now be visible`
+            `Found ${sprites.length} sprites, list should now be visible`,
         );
     } catch (error) {
         console.error("Error analyzing sprites:", error);
@@ -591,107 +658,12 @@ function analyzeSprites() {
 
 // Placeholder for removed saveSvg function
 
-// Set the character type (male/female)
-function setCharacterType(type) {
-    if (type !== characterType) {
-        characterType = type;
-
-        // Update UI
-        document
-            .getElementById("selectMale")
-            .classList.toggle("active", type === "male");
-        document
-            .getElementById("selectFemale")
-            .classList.toggle("active", type === "female");
-
-        // Fetch files for the selected character type
-        fetchSvgFiles();
-
-        // Update status
-        updateStatus(`Switched to ${type} character`, "success");
-    }
-}
-
-// Remove hat from all SVG files
-async function removeHat() {
-    updateStatus("Removing hats from all files...");
-
-    try {
-        // Call the server-side API to remove hats from all files
-        const response = await fetch("/api/remove-hat-all", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                characterType: characterType,
-            }),
-        });
-
-        const result = await response.json();
-
-        if (!response.ok) {
-            throw new Error(result.error || "Failed to remove hats");
-        }
-
-        // Reload the SVG to show the changes if one is loaded
-        if (currentSvgFile) {
-            await loadSelectedSvg();
-        }
-
-        updateStatus(
-            result.message || "Hats removed successfully from all files",
-            "success"
-        );
-    } catch (error) {
-        console.error("Error removing hats:", error);
-        updateStatus(`Error removing hats: ${error.message}`, "error");
-    }
-}
-
-// Toggle accessories in the current SVG
-async function toggleAccessories() {
-    if (!modifiedSvgContent) {
-        updateStatus("Please load an SVG file first", "warning");
-        return;
-    }
-
-    updateStatus("Toggling accessories...");
-
-    try {
-        // Call the server-side API to toggle accessories
-        const response = await fetch("/api/toggle-accessories", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                fileName: currentSvgFile,
-            }),
-        });
-
-        const result = await response.json();
-
-        if (!response.ok) {
-            throw new Error(result.error || "Failed to toggle accessories");
-        }
-
-        // Reload the SVG to show the changes
-        await loadSelectedSvg();
-        updateStatus(
-            result.message || "Accessories toggled successfully",
-            "success"
-        );
-    } catch (error) {
-        console.error("Error toggling accessories:", error);
-        updateStatus(`Error toggling accessories: ${error.message}`, "error");
-    }
-}
+// Character type and special action functions removed for cleaner modern interface
 
 // Apply the selected sprite to all SVG files
 async function applyToAllFiles() {
     const replacementFile = document.getElementById(
-        "spriteReplacementFile"
+        "spriteReplacementFile",
     ).value;
     if (!replacementFile) {
         updateStatus("Please select a replacement file", "warning");
@@ -703,7 +675,7 @@ async function applyToAllFiles() {
 
     if (
         !confirm(
-            "Are you sure you want to apply this sprite to ALL SVG files? This will modify all files in the ready folder."
+            "Are you sure you want to apply this sprite to ALL SVG files? This will modify all files in the ready folder.",
         )
     ) {
         return;
@@ -737,7 +709,7 @@ async function applyToAllFiles() {
 
         updateStatus(
             result.message || "Applied to all files successfully",
-            "success"
+            "success",
         );
     } catch (error) {
         console.error("Error applying to all files:", error);

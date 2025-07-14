@@ -13,41 +13,72 @@ app.get("/", (req, res) => {
     res.sendFile(path.join(__dirname, "index.html"));
 });
 
-// API endpoint to get all SVG files in the animation-body-full/rogue/ready folder
-app.get("/api/svg-files", (req, res) => {
-    // Get character type from query parameter (default to male)
-    const characterType = req.query.type || "male";
+// API endpoint to get all animation folders
+app.get("/api/animation-folders", (req, res) => {
+    const baseFolder = path.join(__dirname, "animation-body-full/rogue");
 
-    // Determine the folder path based on character type
-    let folderPath;
-    if (characterType === "female") {
-        folderPath = path.join(
-            __dirname,
-            "animation-body-full/rogue/female/ready"
-        );
-        // If female folder doesn't exist, create it
-        if (!fs.existsSync(folderPath)) {
-            fs.mkdirSync(folderPath, { recursive: true });
-        }
-    } else {
-        folderPath = path.join(__dirname, "animation-body-full/rogue/ready");
+    try {
+        const items = fs.readdirSync(baseFolder);
+        const folders = items.filter((item) => {
+            const itemPath = path.join(baseFolder, item);
+            return fs.statSync(itemPath).isDirectory() && item !== "female"; // Exclude female folder
+        });
+
+        res.json(folders);
+    } catch (error) {
+        console.error("Error reading animation folders:", error);
+        res.status(500).json({ error: "Failed to read animation folders" });
     }
+});
 
-    fs.readdir(folderPath, (err, files) => {
-        if (err) {
-            console.error(`Error reading directory for ${characterType}:`, err);
-            return res.status(500).json({
-                error: `Failed to read directory for ${characterType}`,
+// API endpoint to get all SVG files in a specific animation folder
+app.get("/api/svg-files", (req, res) => {
+    const animationFolder = req.query.folder || "ready";
+    const folderPath = path.join(
+        __dirname,
+        "animation-body-full/rogue",
+        animationFolder,
+    );
+
+    try {
+        let allSvgFiles = [];
+
+        // Check if the folder exists
+        if (!fs.existsSync(folderPath)) {
+            return res.status(404).json({
+                error: `Animation folder '${animationFolder}' not found`,
             });
         }
 
-        const svgFiles = files.filter((file) => file.endsWith(".svg"));
+        // Read the contents of the animation folder
+        const items = fs.readdirSync(folderPath);
+
+        for (const item of items) {
+            const itemPath = path.join(folderPath, item);
+            const stat = fs.statSync(itemPath);
+
+            if (stat.isFile() && item.endsWith(".svg")) {
+                // Direct SVG file in the animation folder
+                allSvgFiles.push(item);
+            } else if (stat.isDirectory()) {
+                // Subdirectory (like start, loop, end) - read SVG files from it
+                try {
+                    const subFiles = fs.readdirSync(itemPath);
+                    const subSvgFiles = subFiles
+                        .filter((file) => file.endsWith(".svg"))
+                        .map((file) => `${item}/${file}`);
+                    allSvgFiles.push(...subSvgFiles);
+                } catch (subErr) {
+                    console.warn(`Error reading subdirectory ${item}:`, subErr);
+                }
+            }
+        }
 
         // Sort files numerically instead of alphabetically
-        svgFiles.sort((a, b) => {
+        allSvgFiles.sort((a, b) => {
             // Extract the numeric part of the filename (before the .svg extension)
-            const numA = parseInt(a.replace(/\.svg$/, ""));
-            const numB = parseInt(b.replace(/\.svg$/, ""));
+            const numA = parseInt(a.replace(/^.*\//, "").replace(/\.svg$/, ""));
+            const numB = parseInt(b.replace(/^.*\//, "").replace(/\.svg$/, ""));
 
             // If both are valid numbers, sort numerically
             if (!isNaN(numA) && !isNaN(numB)) {
@@ -58,8 +89,13 @@ app.get("/api/svg-files", (req, res) => {
             return a.localeCompare(b);
         });
 
-        res.json(svgFiles);
-    });
+        res.json(allSvgFiles);
+    } catch (error) {
+        console.error(`Error reading directory for ${animationFolder}:`, error);
+        res.status(500).json({
+            error: `Failed to read directory for ${animationFolder}`,
+        });
+    }
 });
 
 // API endpoint to get all replacement SVG files in the body-parts/rogue folder
@@ -115,7 +151,7 @@ app.post("/api/restore-all-svg", (req, res) => {
     try {
         const readyFolderPath = path.join(
             __dirname,
-            "animation-body-full/rogue/ready"
+            "animation-body-full/rogue/ready",
         );
         const backupsFolderPath = path.join(readyFolderPath, "backups");
 
@@ -154,7 +190,7 @@ app.post("/api/restore-all-svg", (req, res) => {
         });
 
         const successCount = results.filter(
-            (r) => r.status === "restored"
+            (r) => r.status === "restored",
         ).length;
         const errorCount = results.filter((r) => r.status === "error").length;
 
@@ -185,7 +221,7 @@ app.post("/api/replace-sprite", async (req, res) => {
         const filePath = path.join(
             __dirname,
             "animation-body-full/rogue/ready",
-            fileName
+            fileName,
         );
         const replacementSvgPath = path.join(__dirname, replacementFile);
 
@@ -204,7 +240,7 @@ app.post("/api/replace-sprite", async (req, res) => {
         const backupPath = path.join(
             __dirname,
             "animation-body-full/rogue/ready/backups",
-            fileName
+            fileName,
         );
 
         // Ensure the backups directory exists
@@ -221,7 +257,7 @@ app.post("/api/replace-sprite", async (req, res) => {
         const svgContent = fs.readFileSync(filePath, "utf8");
         const replacementSvgContent = fs.readFileSync(
             replacementSvgPath,
-            "utf8"
+            "utf8",
         );
 
         // Parse the SVGs
@@ -229,7 +265,7 @@ app.post("/api/replace-sprite", async (req, res) => {
         const svgDoc = parser.parseFromString(svgContent, "text/xml");
         const replacementDoc = parser.parseFromString(
             replacementSvgContent,
-            "text/xml"
+            "text/xml",
         );
 
         // Get replacement paths
@@ -288,14 +324,16 @@ app.post("/api/replace-sprite", async (req, res) => {
         // Function to process a sprite element
         async function processSprite(spriteElement) {
             console.log(
-                `Processing sprite element: ${spriteElement.getAttribute("id")}`
+                `Processing sprite element: ${spriteElement.getAttribute(
+                    "id",
+                )}`,
             );
 
             // First check if this is a direct shape element with paths
             const directPaths = spriteElement.getElementsByTagName("path");
             if (directPaths.length > 0) {
                 console.log(
-                    `Found ${directPaths.length} paths directly in sprite element`
+                    `Found ${directPaths.length} paths directly in sprite element`,
                 );
                 // Use the sprite element directly as it contains paths
                 const shapeElement = spriteElement;
@@ -334,7 +372,7 @@ app.post("/api/replace-sprite", async (req, res) => {
             const useElements = spriteElement.getElementsByTagName("use");
             if (useElements.length === 0) {
                 console.log(
-                    "No use elements or paths found in sprite, skipping"
+                    "No use elements or paths found in sprite, skipping",
                 );
                 return;
             }
@@ -352,7 +390,7 @@ app.post("/api/replace-sprite", async (req, res) => {
 
             if (!shapeElement) {
                 console.log(
-                    `Shape element with ID ${shapeId} not found, skipping`
+                    `Shape element with ID ${shapeId} not found, skipping`,
                 );
                 return;
             }
@@ -419,7 +457,7 @@ app.post("/api/apply-to-all", async (req, res) => {
 
         const readyFolderPath = path.join(
             __dirname,
-            "animation-body-full/rogue/ready"
+            "animation-body-full/rogue/ready",
         );
         const replacementSvgPath = path.join(__dirname, replacementFile);
 
@@ -443,14 +481,14 @@ app.post("/api/apply-to-all", async (req, res) => {
         // Read the replacement SVG file
         const replacementSvgContent = fs.readFileSync(
             replacementSvgPath,
-            "utf8"
+            "utf8",
         );
 
         // Parse the replacement SVG
         const parser = new (require("xmldom").DOMParser)();
         const replacementDoc = parser.parseFromString(
             replacementSvgContent,
-            "text/xml"
+            "text/xml",
         );
 
         // Get replacement paths
@@ -472,7 +510,7 @@ app.post("/api/apply-to-all", async (req, res) => {
                 const backupPath = path.join(
                     readyFolderPath,
                     "backups",
-                    fileName
+                    fileName,
                 );
 
                 // Ensure the backups directory exists
@@ -530,8 +568,8 @@ app.post("/api/apply-to-all", async (req, res) => {
                 async function processSprite(spriteElement) {
                     console.log(
                         `Processing sprite element: ${spriteElement.getAttribute(
-                            "id"
-                        )} in ${fileName}`
+                            "id",
+                        )} in ${fileName}`,
                     );
 
                     // First check if this is a direct shape element with paths
@@ -640,10 +678,10 @@ app.post("/api/apply-to-all", async (req, res) => {
         }
 
         const updatedCount = results.filter(
-            (r) => r.status === "updated"
+            (r) => r.status === "updated",
         ).length;
         const skippedCount = results.filter(
-            (r) => r.status === "skipped"
+            (r) => r.status === "skipped",
         ).length;
         const errorCount = results.filter((r) => r.status === "error").length;
 
@@ -726,7 +764,7 @@ app.post("/api/remove-hat", async (req, res) => {
                     !lcName.includes("cloak")
                 ) {
                     console.log(
-                        `Found hat by character name: ${characterName}`
+                        `Found hat by character name: ${characterName}`,
                     );
                     hatElements.push(element);
                     continue;
@@ -855,7 +893,7 @@ app.post("/api/toggle-accessories", async (req, res) => {
                     lcName === "a_Cloak"
                 ) {
                     console.log(
-                        `Found accessory by character name: ${characterName}`
+                        `Found accessory by character name: ${characterName}`,
                     );
                     accessoryElements.push(element);
                     continue;
@@ -989,7 +1027,7 @@ app.post("/api/remove-hat-all", async (req, res) => {
 
                     // Check for hat-related character names
                     const characterName = element.getAttribute(
-                        "ffdec:characterName"
+                        "ffdec:characterName",
                     );
                     if (characterName) {
                         const lcName = characterName.toLowerCase();
@@ -1004,7 +1042,7 @@ app.post("/api/remove-hat-all", async (req, res) => {
                             !lcName.includes("cloak")
                         ) {
                             console.log(
-                                `Found hat by character name: ${characterName} in ${fileName}`
+                                `Found hat by character name: ${characterName} in ${fileName}`,
                             );
                             hatElements.push(element);
                             continue;
@@ -1026,7 +1064,7 @@ app.post("/api/remove-hat-all", async (req, res) => {
                             !lcId.includes("cloak")
                         ) {
                             console.log(
-                                `Found hat by ID: ${id} in ${fileName}`
+                                `Found hat by ID: ${id} in ${fileName}`,
                             );
                             hatElements.push(element);
                         }
@@ -1064,11 +1102,11 @@ app.post("/api/remove-hat-all", async (req, res) => {
         }
 
         const successCount = results.filter(
-            (r) => r.status === "success"
+            (r) => r.status === "success",
         ).length;
         const totalRemoved = results.reduce(
             (sum, r) => sum + (r.removedCount || 0),
-            0
+            0,
         );
         const errorCount = results.filter((r) => r.status === "error").length;
 
@@ -1124,14 +1162,14 @@ app.post("/api/apply-to-all", async (req, res) => {
         // Read the replacement SVG file
         const replacementSvgContent = fs.readFileSync(
             replacementSvgPath,
-            "utf8"
+            "utf8",
         );
 
         // Parse the replacement SVG
         const parser = new (require("xmldom").DOMParser)();
         const replacementDoc = parser.parseFromString(
             replacementSvgContent,
-            "text/xml"
+            "text/xml",
         );
 
         // Get replacement paths
@@ -1153,7 +1191,7 @@ app.post("/api/apply-to-all", async (req, res) => {
                 const backupPath = path.join(
                     readyFolderPath,
                     "backups",
-                    fileName
+                    fileName,
                 );
 
                 // Ensure the backups directory exists
@@ -1203,7 +1241,7 @@ app.post("/api/apply-to-all", async (req, res) => {
                     // Process ALL sprites found, not just the first one
                     if (spriteElements.length > 0) {
                         console.log(
-                            `Found ${spriteElements.length} sprites in ${fileName}`
+                            `Found ${spriteElements.length} sprites in ${fileName}`,
                         );
                         for (const spriteElement of spriteElements) {
                             await processSprite(spriteElement);
@@ -1216,8 +1254,8 @@ app.post("/api/apply-to-all", async (req, res) => {
                 async function processSprite(spriteElement) {
                     console.log(
                         `Processing sprite element: ${spriteElement.getAttribute(
-                            "id"
-                        )} in ${fileName}`
+                            "id",
+                        )} in ${fileName}`,
                     );
 
                     // First check if this is a direct shape element with paths
@@ -1326,10 +1364,10 @@ app.post("/api/apply-to-all", async (req, res) => {
         }
 
         const updatedCount = results.filter(
-            (r) => r.status === "updated"
+            (r) => r.status === "updated",
         ).length;
         const skippedCount = results.filter(
-            (r) => r.status === "skipped"
+            (r) => r.status === "skipped",
         ).length;
         const errorCount = results.filter((r) => r.status === "error").length;
 
