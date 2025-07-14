@@ -444,7 +444,223 @@ app.post("/api/replace-sprite", async (req, res) => {
     }
 });
 
-// Old API endpoint removed - replaced with updated version below that supports animation folders
+// Old API endpoint removed - replaced with updated version below
+
+
+
+        // Parse the replacement SVG
+        const parser = new (require("xmldom").DOMParser)();
+        const replacementDoc = parser.parseFromString(
+            replacementSvgContent,
+            "text/xml",
+        );
+
+        // Get replacement paths
+        const replacementPaths = replacementDoc.getElementsByTagName("path");
+        if (replacementPaths.length === 0) {
+            return res
+                .status(400)
+                .json({ error: "No paths found in replacement SVG" });
+        }
+
+        const results = [];
+
+        // Process each SVG file
+        for (const fileName of svgFiles) {
+            try {
+                const filePath = path.join(readyFolderPath, fileName);
+
+                // Create a backup if it doesn't exist
+                const backupPath = path.join(
+                    readyFolderPath,
+                    "backups",
+                    fileName,
+                );
+
+                // Ensure the backups directory exists
+                const backupDir = path.dirname(backupPath);
+                if (!fs.existsSync(backupDir)) {
+                    fs.mkdirSync(backupDir, { recursive: true });
+                }
+
+                if (!fs.existsSync(backupPath)) {
+                    fs.copyFileSync(filePath, backupPath);
+                }
+
+                // Read the SVG file
+                const svgContent = fs.readFileSync(filePath, "utf8");
+
+                // Parse the SVG
+                const svgDoc = parser.parseFromString(svgContent, "text/xml");
+
+                let targetSprite = null;
+                let updated = false;
+
+                // If a specific sprite ID was provided, use that
+                if (spriteId) {
+                    targetSprite = svgDoc.getElementById(spriteId);
+                    if (targetSprite) {
+                        await processSprite(targetSprite);
+                        updated = true;
+                    }
+                } else {
+                    // Otherwise, find all sprite elements
+                    const spriteElements = [];
+                    const allElements = svgDoc.getElementsByTagName("*");
+
+                    for (let i = 0; i < allElements.length; i++) {
+                        const element = allElements[i];
+                        if (
+                            element.nodeType === 1 &&
+                            element.hasAttribute("id")
+                        ) {
+                            const id = element.getAttribute("id");
+                            if (id.startsWith("sprite")) {
+                                spriteElements.push(element);
+                            }
+                        }
+                    }
+
+                    if (spriteElements.length > 0) {
+                        // Process the first sprite found
+                        await processSprite(spriteElements[0]);
+                        updated = true;
+                    }
+                }
+
+                // Function to process a sprite element
+                async function processSprite(spriteElement) {
+                    console.log(
+                        `Processing sprite element: ${spriteElement.getAttribute(
+                            "id",
+                        )} in ${fileName}`,
+                    );
+
+                    // First check if this is a direct shape element with paths
+                    const directPaths =
+                        spriteElement.getElementsByTagName("path");
+                    if (directPaths.length > 0) {
+                        // Use the sprite element directly as it contains paths
+                        const shapeElement = spriteElement;
+
+                        // Clear existing paths in the shape element
+                        const existingPaths =
+                            shapeElement.getElementsByTagName("path");
+                        const pathsToRemove = [];
+                        for (let i = 0; i < existingPaths.length; i++) {
+                            pathsToRemove.push(existingPaths[i]);
+                        }
+
+                        // Remove the paths
+                        pathsToRemove.forEach((path) => {
+                            if (path.parentNode) {
+                                path.parentNode.removeChild(path);
+                            }
+                        });
+
+                        // Add new paths from the replacement SVG
+                        for (let i = 0; i < replacementPaths.length; i++) {
+                            const pathNode =
+                                replacementPaths[i].cloneNode(true);
+                            shapeElement.appendChild(pathNode);
+                        }
+
+                        return;
+                    }
+
+                    // If no direct paths, look for use elements that reference shapes
+                    const useElements =
+                        spriteElement.getElementsByTagName("use");
+                    if (useElements.length === 0) {
+                        return;
+                    }
+
+                    const useElement = useElements[0];
+                    const shapeHref = useElement.getAttribute("xlink:href");
+                    if (!shapeHref) {
+                        return;
+                    }
+
+                    const shapeId = shapeHref.substring(1);
+                    const shapeElement = svgDoc.getElementById(shapeId);
+
+                    if (!shapeElement) {
+                        return;
+                    }
+
+                    // Clear existing paths in the shape element
+                    const existingPaths =
+                        shapeElement.getElementsByTagName("path");
+                    const pathsToRemove = [];
+                    for (let i = 0; i < existingPaths.length; i++) {
+                        pathsToRemove.push(existingPaths[i]);
+                    }
+
+                    // Remove the paths
+                    pathsToRemove.forEach((path) => {
+                        if (path.parentNode) {
+                            path.parentNode.removeChild(path);
+                        }
+                    });
+
+                    // Add new paths from the replacement SVG
+                    for (let i = 0; i < replacementPaths.length; i++) {
+                        const pathNode = replacementPaths[i].cloneNode(true);
+                        shapeElement.appendChild(pathNode);
+                    }
+                }
+
+                if (updated) {
+                    // Convert back to string and save
+                    const serializer = new (require("xmldom").XMLSerializer)();
+                    const modifiedContent =
+                        serializer.serializeToString(svgDoc);
+
+                    fs.writeFileSync(filePath, modifiedContent, "utf8");
+
+                    results.push({
+                        fileName,
+                        status: "updated",
+                    });
+                } else {
+                    results.push({
+                        fileName,
+                        status: "skipped",
+                        message: spriteId
+                            ? `Sprite with ID ${spriteId} not found`
+                            : "No suitable sprite found",
+                    });
+                }
+            } catch (error) {
+                console.error(`Error processing ${fileName}:`, error);
+                results.push({
+                    fileName,
+                    status: "error",
+                    message: error.message,
+                });
+            }
+        }
+
+        const updatedCount = results.filter(
+            (r) => r.status === "updated",
+        ).length;
+        const skippedCount = results.filter(
+            (r) => r.status === "skipped",
+        ).length;
+        const errorCount = results.filter((r) => r.status === "error").length;
+
+        res.json({
+            success: true,
+            message: `Updated ${updatedCount} files, skipped ${skippedCount} files, ${errorCount} errors`,
+            results,
+        });
+    } catch (error) {
+        console.error("Error applying to all files:", error);
+        res.status(500).json({
+            error: error.message || "Failed to apply to all files",
+        });
+    }
+});
 
 // API endpoint to remove hat from an SVG
 app.post("/api/remove-hat", async (req, res) => {
@@ -917,11 +1133,6 @@ app.post("/api/apply-to-all", async (req, res) => {
         const items = fs.readdirSync(animationFolderPath);
 
         for (const item of items) {
-            // Skip backup directories
-            if (item === "backups") {
-                continue;
-            }
-
             const itemPath = path.join(animationFolderPath, item);
             const stat = fs.statSync(itemPath);
 
@@ -1034,7 +1245,7 @@ app.post("/api/apply-to-all", async (req, res) => {
                     // Process ALL sprites found, not just the first one
                     if (spriteElements.length > 0) {
                         console.log(
-                            `Found ${spriteElements.length} sprites in ${relativePath}`,
+                            `Found ${spriteElements.length} sprites in ${fileName}`,
                         );
                         for (const spriteElement of spriteElements) {
                             await processSprite(spriteElement);
@@ -1048,7 +1259,7 @@ app.post("/api/apply-to-all", async (req, res) => {
                     console.log(
                         `Processing sprite element: ${spriteElement.getAttribute(
                             "id",
-                        )} in ${relativePath}`,
+                        )} in ${fileName}`,
                     );
 
                     // First check if this is a direct shape element with paths
@@ -1147,12 +1358,9 @@ app.post("/api/apply-to-all", async (req, res) => {
                     });
                 }
             } catch (error) {
-                console.error(
-                    `Error processing ${fileInfo.relativePath}:`,
-                    error,
-                );
+                console.error(`Error processing ${relativePath}:`, error);
                 results.push({
-                    fileName: fileInfo.relativePath,
+                    fileName: relativePath,
                     status: "error",
                     message: error.message,
                 });
