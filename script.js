@@ -329,23 +329,30 @@ async function replaceSprite() {
         return;
     }
 
-    // Get the optional sprite ID
     const spriteId = document.getElementById("spriteId").value.trim();
 
     updateStatus("Replacing sprite in all files while preserving transform...");
 
     try {
-        // Call the server-side API to replace the sprite in all files
+        const requestBody = {
+            replacementFile,
+            spriteId: spriteId || undefined,
+            animationFolder: currentAnimationFolder,
+        };
+
+        if (modifiedSvgContent && spriteId) {
+            const modifiedSpriteData = extractModifiedSprite(spriteId);
+            if (modifiedSpriteData && modifiedSpriteData.hasModifications) {
+                requestBody.modifiedSpriteData = modifiedSpriteData;
+            }
+        }
+
         const response = await fetch("/api/apply-to-all", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
             },
-            body: JSON.stringify({
-                replacementFile,
-                spriteId: spriteId || undefined, // Only send if not empty
-                animationFolder: currentAnimationFolder,
-            }),
+            body: JSON.stringify(requestBody),
         });
 
         const result = await response.json();
@@ -935,19 +942,30 @@ function createColorSwatch(color, index, sprite) {
     return swatch;
 }
 
-// Normalize color to hex format for color input
+// Normalize color to 6 digit hex format (lowercase) for comparisons
 function normalizeColor(color) {
-    // If it's already a hex color, return it
+    if (!color) return "";
+    // If it's already a hex color, ensure it's 6 digits and lowercase
     if (color.startsWith("#")) {
-        return color;
+        if (color.length === 4) {
+            color =
+                "#" +
+                color[1] +
+                color[1] +
+                color[2] +
+                color[2] +
+                color[3] +
+                color[3];
+        }
+        return color.toLowerCase();
     }
 
-    // Handle RGB colors
+    // Handle RGB/RGBA colors
     if (color.startsWith("rgb")) {
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
         ctx.fillStyle = color;
-        return ctx.fillStyle;
+        return ctx.fillStyle.toLowerCase();
     }
 
     // For named colors, create a temporary element to get computed color
@@ -964,8 +982,10 @@ function normalizeColor(color) {
         const g = parseInt(rgbMatch[2]);
         const b = parseInt(rgbMatch[3]);
         return (
-            "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)
-        );
+            "#" + ((1 << 24) + (r << 16) + (g << 8) + b)
+                .toString(16)
+                .slice(1)
+        ).toLowerCase();
     }
 
     return "#000000"; // fallback
@@ -978,8 +998,11 @@ function updateSpriteColor(sprite, oldColor, newColor) {
         return;
     }
 
+    const oldColorNorm = normalizeColor(oldColor);
+    const newColorNorm = normalizeColor(newColor);
+
     console.log(
-        `Updating color across all sprites: ${oldColor} -> ${newColor} (triggered by ${sprite.id})`,
+        `Updating color across all sprites: ${oldColorNorm} -> ${newColorNorm} (triggered by ${sprite.id})`,
     );
 
     try {
@@ -1003,29 +1026,29 @@ function updateSpriteColor(sprite, oldColor, newColor) {
 
         // Function to update color in an element
         function updateElementColor(element, parentSpriteId = null) {
-            // Update fill attribute
-            if (element.getAttribute("fill") === oldColor) {
-                element.setAttribute("fill", newColor);
+            const fillAttr = normalizeColor(element.getAttribute("fill"));
+            if (fillAttr && fillAttr === oldColorNorm) {
+                element.setAttribute("fill", newColorNorm);
                 updated = true;
                 updateCount++;
                 if (parentSpriteId) spritesUpdated.add(parentSpriteId);
                 console.log(
                     `Updated fill attribute in ${
                         parentSpriteId || "element"
-                    }: ${oldColor} -> ${newColor}`,
+                    }: ${oldColorNorm} -> ${newColorNorm}`,
                 );
             }
 
-            // Update stroke attribute
-            if (element.getAttribute("stroke") === oldColor) {
-                element.setAttribute("stroke", newColor);
+            const strokeAttr = normalizeColor(element.getAttribute("stroke"));
+            if (strokeAttr && strokeAttr === oldColorNorm) {
+                element.setAttribute("stroke", newColorNorm);
                 updated = true;
                 updateCount++;
                 if (parentSpriteId) spritesUpdated.add(parentSpriteId);
                 console.log(
                     `Updated stroke attribute in ${
                         parentSpriteId || "element"
-                    }: ${oldColor} -> ${newColor}`,
+                    }: ${oldColorNorm} -> ${newColorNorm}`,
                 );
             }
 
@@ -1035,46 +1058,34 @@ function updateSpriteColor(sprite, oldColor, newColor) {
                 let newStyle = style;
                 let styleUpdated = false;
 
-                // Update fill in style
-                const fillRegex = new RegExp(
-                    `fill\\s*:\\s*${oldColor.replace(
-                        /[.*+?^${}()|[\]\\]/g,
-                        "\\$&",
-                    )}`,
-                    "gi",
-                );
-                if (fillRegex.test(style)) {
-                    newStyle = newStyle.replace(fillRegex, `fill: ${newColor}`);
-                    styleUpdated = true;
-                    if (parentSpriteId) spritesUpdated.add(parentSpriteId);
-                    console.log(
-                        `Updated fill in style in ${
-                            parentSpriteId || "element"
-                        }: ${oldColor} -> ${newColor}`,
-                    );
+                const styleParts = newStyle.split(";").map((s) => s.trim());
+                for (let i = 0; i < styleParts.length; i++) {
+                    if (!styleParts[i]) continue;
+                    const [prop, val] = styleParts[i].split(":").map((s) => s.trim());
+                    if (!prop) continue;
+                    if (prop === "fill" && normalizeColor(val) === oldColorNorm) {
+                        styleParts[i] = `fill: ${newColorNorm}`;
+                        styleUpdated = true;
+                        if (parentSpriteId) spritesUpdated.add(parentSpriteId);
+                        console.log(
+                            `Updated fill in style in ${
+                                parentSpriteId || "element"
+                            }: ${oldColorNorm} -> ${newColorNorm}`,
+                        );
+                    }
+                    if (prop === "stroke" && normalizeColor(val) === oldColorNorm) {
+                        styleParts[i] = `stroke: ${newColorNorm}`;
+                        styleUpdated = true;
+                        if (parentSpriteId) spritesUpdated.add(parentSpriteId);
+                        console.log(
+                            `Updated stroke in style in ${
+                                parentSpriteId || "element"
+                            }: ${oldColorNorm} -> ${newColorNorm}`,
+                        );
+                    }
                 }
 
-                // Update stroke in style
-                const strokeRegex = new RegExp(
-                    `stroke\\s*:\\s*${oldColor.replace(
-                        /[.*+?^${}()|[\]\\]/g,
-                        "\\$&",
-                    )}`,
-                    "gi",
-                );
-                if (strokeRegex.test(style)) {
-                    newStyle = newStyle.replace(
-                        strokeRegex,
-                        `stroke: ${newColor}`,
-                    );
-                    styleUpdated = true;
-                    if (parentSpriteId) spritesUpdated.add(parentSpriteId);
-                    console.log(
-                        `Updated stroke in style in ${
-                            parentSpriteId || "element"
-                        }: ${oldColor} -> ${newColor}`,
-                    );
-                }
+                newStyle = styleParts.filter(Boolean).join("; ");
 
                 if (styleUpdated) {
                     element.setAttribute("style", newStyle);
@@ -1153,7 +1164,7 @@ function updateSpriteColor(sprite, oldColor, newColor) {
             console.log("SVG preview updated successfully");
         } else {
             console.log(
-                `No instances of color ${oldColor} found in any sprites`,
+                `No instances of color ${oldColorNorm} found in any sprites`,
             );
         }
     } catch (error) {
