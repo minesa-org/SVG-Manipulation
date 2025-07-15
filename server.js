@@ -1066,11 +1066,23 @@ app.post("/api/apply-to-all", async (req, res) => {
         }
 
         // If we received modified sprite data, merge its color attributes
-        if (modifiedSpriteData && Array.isArray(modifiedSpriteData.paths)) {
-            replacementPaths.forEach((p, idx) => {
-                const mod = modifiedSpriteData.paths[idx];
-                applyColorAttrs(p, mod);
-            });
+        // Also build a map for referenced shapes so their colors are preserved
+        const shapeModMap = {};
+        if (modifiedSpriteData) {
+            if (Array.isArray(modifiedSpriteData.paths)) {
+                replacementPaths.forEach((p, idx) => {
+                    const mod = modifiedSpriteData.paths[idx];
+                    applyColorAttrs(p, mod);
+                });
+            }
+
+            if (Array.isArray(modifiedSpriteData.referencedShapes)) {
+                modifiedSpriteData.referencedShapes.forEach((ref) => {
+                    const key = (ref.shapeId || "").replace("#", "");
+                    if (!shapeModMap[key]) shapeModMap[key] = [];
+                    shapeModMap[key].push(ref.pathData);
+                });
+            }
         }
 
         const results = [];
@@ -1223,8 +1235,19 @@ app.post("/api/apply-to-all", async (req, res) => {
                     });
 
                     // Add new paths from the replacement SVG (color already applied)
+                    const addedPaths = [];
                     for (let i = 0; i < replacementPaths.length; i++) {
-                        shapeElement.appendChild(replacementPaths[i].cloneNode(true));
+                        const node = replacementPaths[i].cloneNode(true);
+                        shapeElement.appendChild(node);
+                        addedPaths.push(node);
+                    }
+
+                    // Apply color modifications if provided for this shape
+                    const mods = shapeModMap[shapeId];
+                    if (mods) {
+                        for (let i = 0; i < addedPaths.length && i < mods.length; i++) {
+                            applyColorAttrs(addedPaths[i], mods[i]);
+                        }
                     }
                 }
 
