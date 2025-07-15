@@ -1019,61 +1019,10 @@ app.post("/api/apply-to-all", async (req, res) => {
         }
 
         let replacementPaths = [];
-        let referencedShapesData = [];
         const parser = new (require("xmldom").DOMParser)();
 
-        // Handle modified sprite data or original replacement file
-        if (modifiedSpriteData && modifiedSpriteData.hasModifications) {
-            console.log("Using modified sprite data for replacement");
-
-            // Create path elements from the modified data
-            const xmlDoc = parser.parseFromString("<svg></svg>", "text/xml");
-
-            if (Array.isArray(modifiedSpriteData.paths)) {
-                modifiedSpriteData.paths.forEach((pathData) => {
-                    const pathElement = xmlDoc.createElement("path");
-
-                    // Set all the attributes from the modified data
-                    Object.keys(pathData).forEach((attr) => {
-                        if (
-                            pathData[attr] !== null &&
-                            pathData[attr] !== undefined
-                        ) {
-                            pathElement.setAttribute(attr, pathData[attr]);
-                        }
-                    });
-
-                    replacementPaths.push(pathElement);
-                });
-            }
-
-            if (
-                Array.isArray(modifiedSpriteData.referencedShapes) &&
-                modifiedSpriteData.referencedShapes.length > 0
-            ) {
-                referencedShapesData = modifiedSpriteData.referencedShapes;
-
-                // If we don't have direct paths, use the first referenced shape's paths
-                if (replacementPaths.length === 0) {
-                    referencedShapesData.forEach((ref) => {
-                        const pathElement = xmlDoc.createElement("path");
-                        Object.keys(ref.pathData).forEach((attr) => {
-                            if (
-                                ref.pathData[attr] !== null &&
-                                ref.pathData[attr] !== undefined
-                            ) {
-                                pathElement.setAttribute(attr, ref.pathData[attr]);
-                            }
-                        });
-                        replacementPaths.push(pathElement);
-                    });
-                }
-            }
-
-            console.log(
-                `Created ${replacementPaths.length} paths from modified sprite data`,
-            );
-        } else {
+        // Always read the replacement SVG file
+        {
             // Read the replacement SVG file
             const replacementSvgContent = fs.readFileSync(
                 replacementSvgPath,
@@ -1092,18 +1041,39 @@ app.post("/api/apply-to-all", async (req, res) => {
                 replacementPaths.push(pathElements[i]);
             }
 
-            console.log(
-                `Using ${replacementPaths.length} paths from replacement file`,
-            );
+            console.log(`Using ${replacementPaths.length} paths from replacement file`);
         }
 
-        if (
-            replacementPaths.length === 0 &&
-            (!referencedShapesData || referencedShapesData.length === 0)
-        ) {
+        if (replacementPaths.length === 0) {
             return res
                 .status(400)
                 .json({ error: "No paths found in replacement data" });
+        }
+
+        // Helper to apply color-related attributes
+        function applyColorAttrs(target, source) {
+            if (!source) return;
+            const allowed = [
+                "fill",
+                "stroke",
+                "style",
+                "fill-opacity",
+                "stroke-opacity",
+                "opacity",
+            ];
+            allowed.forEach((attr) => {
+                if (source[attr] !== undefined && source[attr] !== null) {
+                    target.setAttribute(attr, source[attr]);
+                }
+            });
+        }
+
+        // If we received modified sprite data, merge its color attributes
+        if (modifiedSpriteData && Array.isArray(modifiedSpriteData.paths)) {
+            replacementPaths.forEach((p, idx) => {
+                const mod = modifiedSpriteData.paths[idx];
+                applyColorAttrs(p, mod);
+            });
         }
 
         const results = [];
@@ -1255,35 +1225,10 @@ app.post("/api/apply-to-all", async (req, res) => {
                         }
                     });
 
-                    // Determine which paths to use for this shape
-                    const refShape = referencedShapesData.find(
-                        (r) =>
-                            r.shapeId === shapeHref ||
-                            r.shapeId === `#${shapeId}` ||
-                            r.shapeId === shapeId,
-                    );
-
-                    const pathsToAdd = [];
-                    if (refShape) {
-                        const p = svgDoc.createElement("path");
-                        Object.keys(refShape.pathData).forEach((attr) => {
-                            if (
-                                refShape.pathData[attr] !== null &&
-                                refShape.pathData[attr] !== undefined
-                            ) {
-                                p.setAttribute(attr, refShape.pathData[attr]);
-                            }
-                        });
-                        pathsToAdd.push(p);
-                    } else {
-                        for (let i = 0; i < replacementPaths.length; i++) {
-                            pathsToAdd.push(replacementPaths[i].cloneNode(true));
-                        }
+                    // Add new paths from the replacement SVG (color already applied)
+                    for (let i = 0; i < replacementPaths.length; i++) {
+                        shapeElement.appendChild(replacementPaths[i].cloneNode(true));
                     }
-
-                    pathsToAdd.forEach((pathNode) => {
-                        shapeElement.appendChild(pathNode);
-                    });
                 }
 
                 if (updated) {
