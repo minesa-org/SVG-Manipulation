@@ -1200,31 +1200,24 @@ function extractModifiedSprite(spriteId) {
             return null;
         }
 
+        // Helper to copy all attributes from an element
+        function getAllAttributes(el) {
+            const obj = {};
+            el.getAttributeNames().forEach((name) => {
+                const val = el.getAttribute(name);
+                if (val !== null && val !== undefined) {
+                    obj[name] = val;
+                }
+            });
+            return obj;
+        }
+
         // Extract all paths from the sprite
         const paths = [];
         const pathElements = spriteElement.querySelectorAll("path");
 
         pathElements.forEach((path) => {
-            const pathData = {
-                d: path.getAttribute("d"),
-                fill: path.getAttribute("fill"),
-                stroke: path.getAttribute("stroke"),
-                style: path.getAttribute("style"),
-                // Include other relevant attributes
-                transform: path.getAttribute("transform"),
-                opacity: path.getAttribute("opacity"),
-                fillOpacity: path.getAttribute("fill-opacity"),
-                strokeOpacity: path.getAttribute("stroke-opacity"),
-                strokeWidth: path.getAttribute("stroke-width"),
-            };
-
-            // Only include attributes that exist
-            Object.keys(pathData).forEach((key) => {
-                if (pathData[key] === null || pathData[key] === undefined) {
-                    delete pathData[key];
-                }
-            });
-
+            const pathData = getAllAttributes(path);
             paths.push(pathData);
         });
 
@@ -1240,27 +1233,7 @@ function extractModifiedSprite(spriteId) {
                 if (referencedElement) {
                     const refPaths = referencedElement.querySelectorAll("path");
                     refPaths.forEach((path) => {
-                        const pathData = {
-                            d: path.getAttribute("d"),
-                            fill: path.getAttribute("fill"),
-                            stroke: path.getAttribute("stroke"),
-                            style: path.getAttribute("style"),
-                            transform: path.getAttribute("transform"),
-                            opacity: path.getAttribute("opacity"),
-                            fillOpacity: path.getAttribute("fill-opacity"),
-                            strokeOpacity: path.getAttribute("stroke-opacity"),
-                            strokeWidth: path.getAttribute("stroke-width"),
-                        };
-
-                        // Only include attributes that exist
-                        Object.keys(pathData).forEach((key) => {
-                            if (
-                                pathData[key] === null ||
-                                pathData[key] === undefined
-                            ) {
-                                delete pathData[key];
-                            }
-                        });
+                        const pathData = getAllAttributes(path);
 
                         referencedShapes.push({
                             shapeId: href,
