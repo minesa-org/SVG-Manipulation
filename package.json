@@ -4,7 +4,8 @@
   "description": "A tool to modify SVG files",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node test/runTests.js"
   },
   "dependencies": {
     "express": "^4.18.2",

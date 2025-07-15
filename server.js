@@ -958,17 +958,14 @@ app.post("/api/apply-to-all", async (req, res) => {
             animationFolder,
         );
 
-        // Only check replacement file if we're not using modified sprite data
-        let replacementSvgPath = null;
-        if (!modifiedSpriteData || !modifiedSpriteData.hasModifications) {
-            replacementSvgPath = path.join(__dirname, replacementFile);
+        // Always require the replacement file path
+        const replacementSvgPath = path.join(__dirname, replacementFile);
 
-            // Check if replacement file exists
-            if (!fs.existsSync(replacementSvgPath)) {
-                return res
-                    .status(404)
-                    .json({ error: "Replacement SVG file not found" });
-            }
+        // Check if replacement file exists
+        if (!fs.existsSync(replacementSvgPath)) {
+            return res
+                .status(404)
+                .json({ error: "Replacement SVG file not found" });
         }
 
         // Check if animation folder exists
@@ -1021,33 +1018,8 @@ app.post("/api/apply-to-all", async (req, res) => {
         let replacementPaths = [];
         const parser = new (require("xmldom").DOMParser)();
 
-        // Handle modified sprite data or original replacement file
-        if (modifiedSpriteData && modifiedSpriteData.hasModifications) {
-            console.log("Using modified sprite data for replacement");
-
-            // Create path elements from the modified sprite data
-            const xmlDoc = parser.parseFromString("<svg></svg>", "text/xml");
-
-            modifiedSpriteData.paths.forEach((pathData) => {
-                const pathElement = xmlDoc.createElement("path");
-
-                // Set all the attributes from the modified data
-                Object.keys(pathData).forEach((attr) => {
-                    if (
-                        pathData[attr] !== null &&
-                        pathData[attr] !== undefined
-                    ) {
-                        pathElement.setAttribute(attr, pathData[attr]);
-                    }
-                });
-
-                replacementPaths.push(pathElement);
-            });
-
-            console.log(
-                `Created ${replacementPaths.length} paths from modified sprite data`,
-            );
-        } else {
+        // Always read the replacement SVG file
+        {
             // Read the replacement SVG file
             const replacementSvgContent = fs.readFileSync(
                 replacementSvgPath,
@@ -1066,15 +1038,51 @@ app.post("/api/apply-to-all", async (req, res) => {
                 replacementPaths.push(pathElements[i]);
             }
 
-            console.log(
-                `Using ${replacementPaths.length} paths from replacement file`,
-            );
+            console.log(`Using ${replacementPaths.length} paths from replacement file`);
         }
 
         if (replacementPaths.length === 0) {
             return res
                 .status(400)
                 .json({ error: "No paths found in replacement data" });
+        }
+
+        // Helper to apply color-related attributes
+        function applyColorAttrs(target, source) {
+            if (!source) return;
+            const allowed = [
+                "fill",
+                "stroke",
+                "style",
+                "fill-opacity",
+                "stroke-opacity",
+                "opacity",
+            ];
+            allowed.forEach((attr) => {
+                if (source[attr] !== undefined && source[attr] !== null) {
+                    target.setAttribute(attr, source[attr]);
+                }
+            });
+        }
+
+        // If we received modified sprite data, merge its color attributes
+        // Also build a map for referenced shapes so their colors are preserved
+        const shapeModMap = {};
+        if (modifiedSpriteData) {
+            if (Array.isArray(modifiedSpriteData.paths)) {
+                replacementPaths.forEach((p, idx) => {
+                    const mod = modifiedSpriteData.paths[idx];
+                    applyColorAttrs(p, mod);
+                });
+            }
+
+            if (Array.isArray(modifiedSpriteData.referencedShapes)) {
+                modifiedSpriteData.referencedShapes.forEach((ref) => {
+                    const key = (ref.shapeId || "").replace("#", "");
+                    if (!shapeModMap[key]) shapeModMap[key] = [];
+                    shapeModMap[key].push(ref.pathData);
+                });
+            }
         }
 
         const results = [];
@@ -1197,12 +1205,14 @@ app.post("/api/apply-to-all", async (req, res) => {
                     }
 
                     const useElement = useElements[0];
-                    const shapeHref = useElement.getAttribute("xlink:href");
+                    const shapeHref =
+                        useElement.getAttribute("xlink:href") ||
+                        useElement.getAttribute("href");
                     if (!shapeHref) {
                         return;
                     }
 
-                    const shapeId = shapeHref.substring(1);
+                    const shapeId = shapeHref.replace("#", "");
                     const shapeElement = svgDoc.getElementById(shapeId);
 
                     if (!shapeElement) {
@@ -1224,10 +1234,20 @@ app.post("/api/apply-to-all", async (req, res) => {
                         }
                     });
 
-                    // Add new paths from the replacement SVG
+                    // Add new paths from the replacement SVG (color already applied)
+                    const addedPaths = [];
                     for (let i = 0; i < replacementPaths.length; i++) {
-                        const pathNode = replacementPaths[i].cloneNode(true);
-                        shapeElement.appendChild(pathNode);
+                        const node = replacementPaths[i].cloneNode(true);
+                        shapeElement.appendChild(node);
+                        addedPaths.push(node);
+                    }
+
+                    // Apply color modifications if provided for this shape
+                    const mods = shapeModMap[shapeId];
+                    if (mods) {
+                        for (let i = 0; i < addedPaths.length && i < mods.length; i++) {
+                            applyColorAttrs(addedPaths[i], mods[i]);
+                        }
                     }
                 }
 
