@@ -958,17 +958,14 @@ app.post("/api/apply-to-all", async (req, res) => {
             animationFolder,
         );
 
-        // Only check replacement file if we're not using modified sprite data
-        let replacementSvgPath = null;
-        if (!modifiedSpriteData || !modifiedSpriteData.hasModifications) {
-            replacementSvgPath = path.join(__dirname, replacementFile);
+        // Always require the replacement file path
+        const replacementSvgPath = path.join(__dirname, replacementFile);
 
-            // Check if replacement file exists
-            if (!fs.existsSync(replacementSvgPath)) {
-                return res
-                    .status(404)
-                    .json({ error: "Replacement SVG file not found" });
-            }
+        // Check if replacement file exists
+        if (!fs.existsSync(replacementSvgPath)) {
+            return res
+                .status(404)
+                .json({ error: "Replacement SVG file not found" });
         }
 
         // Check if animation folder exists
